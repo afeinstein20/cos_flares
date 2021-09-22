@@ -176,23 +176,23 @@ class FlaresWithCOS(object):
             if ion is not None:
                 self.width_table.add_column(Column(widths, ion))
             else:
-                self.width_table.add_column(Column(widths, str(line)))
+                self.width_table.add_column(Column(widths, str(np.round(line,3))))
         except ValueError:
             if ion is not None:
-                self.width_table.replace_column(Column(widths, ion))
+                self.width_table.replace_column(ion, widths)
             else:
-                self.width_table.replace_column(Column(widths, str(line)))
+                self.width_table.replace_column(str(np.round(line,3)), widths)
 
         try:
             if ion is not None:
                 self.error_table.add_column(Column(errors, ion))
             else:
-                self.error_table.add_column(Column(errors, str(line)))
+                self.error_table.add_column(Column(errors, str(np.round(line,3))))
         except ValueError:
             if ion is not None:
-                self.error_table.replace_column(Column(errors, ion))
+                self.error_table.replace_column(ion, errors)
             else:
-                self.error_table.replace_column(Column(errors, str(line)))
+                self.error_table.replace_column(str(np.round(line,3)), errors)
         return
 
 
@@ -258,3 +258,40 @@ class FlaresWithCOS(object):
         eng = np.trapz(Ff-Fq, x=self.time[fmask]) * 4 * np.pi * d**2
         dur = np.trapz((Ff-Fq)/Fq, x=self.time[fmask])
         return eng, dur
+
+
+    def flare_model(self, amp, t0, rise, decay):
+        """
+        Models the flare with an array of times (for double-peaked
+        events). Uses the standard model of a Gaussian rise and 
+        exponential decay.
+        
+        Parameters
+        ----------
+        amp : np.array
+           Array of amplitudes to fit.
+        t0 : np.array
+           Array of peak times of flare to fit.
+        rise : np.array
+           Array of Gaussian rise factors to fit to the flare.
+        decay : np.array
+           Array of exponential decay factors to fit to the flare.
+        
+        Returns
+        -------
+        model : np.array
+           Flare model.
+        """
+        gr = np.zeros(len(self.time))
+        ed = np.zeros(len(self.time))
+        flux = np.zeros(len(self.time))
+        
+        for i in range(len(amp)):
+            g = amp[i] * np.exp( -(self.time[self.time<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) + flux[self.time<t0[i]]
+            gr[self.time<t0[i]] += g
+            e = amp[i] * np.exp( -(self.time[self.time>=t0[i]] - t0[i]) / decay[i] ) + flux[self.time>=t0[i]]
+            ed[self.time>=t0[i]] += e
+
+        return gr + ed
+
+        
