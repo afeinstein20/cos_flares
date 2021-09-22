@@ -3,7 +3,7 @@ import numpy as np
 from astropy import units
 import matplotlib.pyplot as plt
 from astropy.io import fits
-from astropy.table import Table
+from astropy.table import Table, Column
 from lightkurve.lightcurve import LightCurve
 
 __all__ = ['FlaresWithCOS']
@@ -45,6 +45,10 @@ class FlaresWithCOS(object):
         self.time = time * time_unit
         self.orbit = orbit
         self.line_table = None
+        self.width_table = Table()
+        self.error_table = Table()
+        self.fuv130 = None
+
 
     def load_line_table(self, path, fname='line_table.txt',
                         format='csv'):
@@ -134,14 +138,17 @@ class FlaresWithCOS(object):
            If the data is not binned, use binsize=1. Default
            is 3.
         
-        Returns
-        -------
-        widths : np.array
-           Array of measured equivalent widths for
-           all spectra.
-        width_errs : np.array
-           Array of errors on each equivalent width
-           measurement.
+        Attributes
+        ----------
+        width_table : astropy.table.Table
+           Adds a column of measured equivalent widths to the
+           attribute width_table. Columns are replaced when 
+           lines are re-measured.
+        error_table : astropy.table.Table
+           Adds a column of equivalent width errors to the
+           attribute error_table. Columns are replaced when
+           lines are re-measured.
+
         """
         if orbit != 'all':
             mask = np.where(self.orbit == orbit)[0]
@@ -165,4 +172,89 @@ class FlaresWithCOS(object):
             widths[i] = np.nansum(self.flux[x][reg])
             errors[i] = np.nansum(self.flux_err[x][reg])/binsize
 
-        return widths, errors
+        try:
+            if ion is not None:
+                self.width_table.add_column(Column(widths, ion))
+            else:
+                self.width_table.add_column(Column(widths, str(line)))
+        except ValueError:
+            if ion is not None:
+                self.width_table.replace_column(Column(widths, ion))
+            else:
+                self.width_table.replace_column(Column(widths, str(line)))
+
+        try:
+            if ion is not None:
+                self.error_table.add_column(Column(errors, ion))
+            else:
+                self.error_table.add_column(Column(errors, str(line)))
+        except ValueError:
+            if ion is not None:
+                self.error_table.replace_column(Column(errors, ion))
+            else:
+                self.error_table.replace_column(Column(errors, str(line)))
+        return
+
+
+    def measure_FUV130(self):
+        """
+        Integrates the FUV130 flux, as defined in Parke Loyd et al. (2018).
+        
+        Attributes
+        ----------
+        fuv130 : np.ndarray
+           Array of flux values that constitute the FUV130 band.
+        """
+        fuv130 = np.zeros(len(self.time.value))
+
+        for i in range(len(self.wavelength)):
+            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1198.49)) |
+                             ((self.wavelength[i] >= 1201.71) & (self.wavelength[i] <= 1212.16)) |
+                             ((self.wavelength[i] >= 1219.18) & (self.wavelength[i] <= 1274.04)) |
+                             ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1354.49)) |
+                             ((self.wavelength[i] >= 1356.71) & (self.wavelength[i] <= 1357.59)) |
+                             ((self.wavelength[i] >= 1359.51) & (self.wavelength[i] <= 1428.90)) )[0]
+
+            fuv130[i] = np.trapz(self.flux[i][mask], 
+                                 x=self.wavelength[i][mask])
+
+        self.fuv130 = fuv130 + 0.0
+
+
+    def measure_flare_params(self, qmask, fmask, d, flux=None):
+        """
+        Measures the energy and equivalent duration of the flare.
+        Flare parameter equations were taken from Loyd et al. 2018.
+
+        Parameters
+        ----------
+        qmask : np.array
+           Mask for the regions of the FUV130 that should be considered
+           the quiescent flux.
+        fmask : np.array
+           Mask for the regions of the FUV130 that should be considered
+           the flare.
+        d : float
+           The distance to the star with astropy.units.Unit quantity.
+        flux : np.array, optional
+           The flux array to measure the flare parameters. If None, this
+           function uses the FUV130 flux.
+
+        Returns
+        -------
+        energy : float
+           The measured energy of the flare.
+        ed : float
+           The measured equivalent duration of the flare.
+        """
+        if flux is None:
+            if self.fuv130 is None:
+                self.measure_FUV130()
+            flux = self.fuv130 + 0.0
+
+        Fq = np.nanmedian(flux[qmask]/10**-13) * units.erg / units.s / units.cm**2
+        Ff = (flux[fmask]/10**-13) * units.erg / units.s / units.cm**2
+
+        eng = np.trapz(Ff-Fq, x=self.time[fmask]) * 4 * np.pi * d**2
+        dur = np.trapz((Ff-Fq)/Fq, x=self.time[fmask])
+        return eng, dur
