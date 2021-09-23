@@ -1,8 +1,11 @@
 import os
 import numpy as np
 from astropy import units
-import matplotlib.pyplot as plt
 from astropy.io import fits
+import matplotlib.pyplot as plt
+from scipy.signal import gaussian
+from scipy.optimize import minimize
+from scipy.interpolate import interp1d
 from astropy.table import Table, Column
 from lightkurve.lightcurve import LightCurve
 
@@ -287,7 +290,8 @@ class FlaresWithCOS(object):
         flux = np.zeros(len(self.time))
         
         for i in range(len(amp)):
-            g = amp[i] * np.exp( -(self.time[self.time<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) + flux[self.time<t0[i]]
+            g = amp[i] * np.exp( -(self.time[self.time<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) 
+            g += flux[self.time<t0[i]]
             gr[self.time<t0[i]] += g
             e = amp[i] * np.exp( -(self.time[self.time>=t0[i]] - t0[i]) / decay[i] ) + flux[self.time>=t0[i]]
             ed[self.time>=t0[i]] += e
@@ -295,3 +299,120 @@ class FlaresWithCOS(object):
         return gr + ed
 
         
+    def load_lsf_model(self, fname):
+        """
+        Convolves the line spread function with a gaussian to
+        fit line profiles.
+
+        Parameters
+        ----------
+        fname : str
+           The path + name of the line spread function file.
+        
+        Attributes
+        ----------
+        lsf_table : astropy.table.Table
+           A table of convolved models. The models are created
+           in steps of 5 Angstroms.
+        """
+
+        lsf = Table.read(fname, format='ascii')
+        
+        lsf_table = Table()
+
+        for key in lsf.colnames:
+            name = lsf[key][0]
+            data = lsf[key][1:-1] # removes bad rows from the LSF
+            lsf_table.add_column(Column(data, name))
+
+        self.lsf_table = lsf_table
+
+
+    def model_line_shape(self, ion, mask, shape='gaussian',
+                         ext=100):
+        """
+        Takes an ion from the line list and fits a convolved Gaussian
+        with the line spread function. Line profiles are fit by conducting
+        a chi-squared fit.
+
+        Parameters
+        ----------
+        ion : str
+           The ion in the line list to fit a line to.
+        mask : np.ndarray
+           A mask for the out-of-flare observations to create a 
+           template from.
+        shape : str, optional
+           The profile shape to convolve with the line spread
+           function. Default is `gaussian`.
+        ext : float, optional
+           Addition to the vmin and vmax of a given ion to ensure the
+           line profile can be well fit to the data. Default = 100 [km/s].
+        """
+        def gaussian(x, mu, std, f):
+            """ A gaussian profile model.
+            """
+            exp = -0.5 * (x-mu)**2 / std**2
+            denom = std * np.sqrt(np.pi * 2.0)
+            g = f / denom * np.exp(exp)
+            return g 
+
+        def conv_model(lsf, gauss):
+            """ Convolves LSF with line profile.
+            """
+            conv = np.convolve(lsf, gauss, mode='same')
+            return conv
+
+        def chiSquare(var, x, y, yerr, lsf):
+            """ ChiSquare fit of the convolved line
+                profile with the data.
+            """
+            mu, std, f, cf, af = var
+            gmodel = gaussian(x, mu, std, f)
+            conv = conv_model(lsf*cf, gmodel)
+            conv /= af
+            return np.nansum( (y-conv)**2.0 / yerr**2.0 )
+
+        
+        wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
+        vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
+        vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
+
+        # finds the line spread profile closest to the ion in question #
+        argmin = np.argmin(np.abs([float(i) for i in self.lsf_table.colnames] - wc))
+        lsf = self.lsf_table[self.lsf_table.colnames[argmin]].data
+        lsf /= np.nanmax(lsf)
+
+        velocity, _ = self.to_velocity(self.wavelength[0], wc)
+        velocity    = velocity.value + 0.0
+        reg = np.where( (velocity >= vmin-ext) & (velocity <= vmax+ext) )[0]
+
+        # interpolate to the same length as the line spread profile #
+        wave = np.linspace(self.wavelength[0][reg][0], 
+                           self.wavelength[0][reg][-1], 
+                           len(lsf))
+
+        f = interp1d(self.wavelength[0][reg], np.nanmedian(self.flux[mask,:][:,reg], axis=0))
+        
+        ferr = interp1d(self.wavelength[0][reg], np.sqrt( np.nansum( self.flux_err[mask,:][:,reg]**2, axis=0) ))
+
+        f = f(wave)/1e-14
+        ferr = ferr(wave)/1e-14/len(reg)
+
+        # initial guess for the scipy.optimize.minimize function
+        x0 = [wc, 0.1, 0.3, 10, 100]
+        x = minimize(chiSquare, x0=x0,
+                     bounds=((wave.min(), wave.max()),
+                             (0.1,100),
+                             (1,20),
+                             (1,100),
+                             (1,300)),
+                     args=(wave,
+                           f,
+                           ferr,
+                           lsf),
+                     method='L-BFGS-B')
+
+        c = np.convolve(gaussian(wave, x.x[0], x.x[1], x.x[2]), lsf*x.x[3], 'same')/x.x[4]
+        print(x.x)
+        return wave, f, ferr, c
