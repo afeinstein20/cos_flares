@@ -329,7 +329,7 @@ class FlaresWithCOS(object):
 
 
     def model_line_shape(self, ion, mask, shape='gaussian',
-                         ext=100):
+                         ext=100, ngauss=1, x0=[0, 0.1, 0.3, 10, 100]):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
@@ -348,6 +348,13 @@ class FlaresWithCOS(object):
         ext : float, optional
            Addition to the vmin and vmax of a given ion to ensure the
            line profile can be well fit to the data. Default = 100 [km/s].
+        ngauss : int, optional
+           The number of Gaussians used to fit the profile. Default is 1.
+        x0 : list, optional
+           The initial guess values for the Gaussian models. x0 takes in 
+           the following: center wavelength, mean, std, f (gaussian scaling
+           factor), and fc (a scaling factor for the convolved model). 
+           Default is [center wavelength for the ion, 0.1, 0.3, 10, 100].
         """
         def gaussian(x, mu, std, f):
             """ A gaussian profile model.
@@ -375,6 +382,8 @@ class FlaresWithCOS(object):
 
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
+        x0[0] = wc + 0.0
+
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
 
@@ -400,7 +409,6 @@ class FlaresWithCOS(object):
         ferr = ferr(wave)/1e-14/len(reg)
 
         # initial guess for the scipy.optimize.minimize function
-        x0 = [wc, 0.1, 0.3, 10, 100]
         x = minimize(chiSquare, x0=x0,
                      bounds=((wave.min(), wave.max()),
                              (0.1,100),
