@@ -310,3 +310,75 @@ class cosReduce(object):
             hdu.close()
         self.times = np.nanmedian(times, axis=1)
         return
+
+
+    def interpolate(self, path=self.path_a):
+        """
+        Interpolates the 1D spectra onto the same wavelength grid for an 
+        easier comparison.
+
+        Parameters
+        ----------
+        path : str, optional
+           Path to where the `x1d.fits` files are stored.
+           Default is `self.path_a`.
+        
+        Attributes
+        ----------
+        wavelength : np.ndarray
+           Wavelength arrays from each file.
+        flux : np.ndarray
+           Flux arrays from each file.
+        flux_err : np.ndarray
+           Flux error arrays from each file.
+        interp_wave: np.ndarray
+           New wavelength grid.
+        interp_flux : np.ndarray
+           Flux interpolated onto the wavelength grid.
+        interp_flux_err : np.ndarray
+           Flux error interpolated onto the wavelength grid.
+        """
+        fn = np.sort([os.path.join(path, i) for i in os.listdir(path) if
+                      i.endswith('x1d.fits')])
+
+        for i in range(len(fn)):
+            x1ddata = fits.getdata(fn[i])
+            
+            wavelength = np.concatenate((x1ddata["wavelength"][1],
+                                         x1ddata["wavelength"][0]))
+            flux = np.concatenate((x1ddata["flux"][1], 
+                                   x1ddata["flux"][0]))
+            err = np.concatenate((x1ddata["error"][1],
+                                  x1ddata["error"][0]))
+
+            if i == 0:
+                all_wave = np.zeros((len(fn_a), len(wavelengtha)))
+                all_flux = np.zeros((len(fn_a), len(fluxa)))
+                all_flux_err  = np.zeros((len(fn_a), len(erra)))
+
+            all_wave[i] = wavelength + 0.0
+            all_flux[i] = flux + 0.0
+            all_flux_err[i] = err + 0.0
+
+
+        length = int(all_wave.shape[1]*1.5)
+        interp_flux = np.zeros((len(fn), length-2))
+        interp_err = np.zeros((len(fn), length-2))
+
+        finer_wavelength = np.flip(np.logspace(np.log10(np.nanmin(all_wave[:,-1])), 
+                                               np.log10(np.nanmax(all_wave[:,0])),
+                                               length, base=10.0))[1:-1]
+        
+        for i in range(len(all_flux)):
+            f = interp1d(all_wave[i], all_flux[i])
+            interp_flux[i] = f(finer_wavelength)+0.0
+            f = interp1d(all_wave[i], all_err[i])
+            interp_err[i] = f(finer_wavelength)+0.0
+
+        self.wavelength = all_wave + 0.0
+        self.flux = all_flux + 0.0
+        self.flux_err = all_flux_err + 0.0
+        
+        self.interp_wavelength = np.full(interp_flux.shape, finer_wavelength)
+        self.interp_flux = interp_flux + 0.0
+        self.interp_flux_err = interp_flux_err + 0.0
