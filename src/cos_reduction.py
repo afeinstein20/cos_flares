@@ -75,6 +75,7 @@ class cosReduce(object):
             corrtag_b = os.path.join(self.input_path,
                                      '{}_corrtag_b.fits'.format(self.rootname[i]))
         
+
             splittag.splittag(corrtag_a, os.path.join(output_path,
                                                       'split_{}'.format(self.rootname[i])),
                               increment=increment, starttime=starttime,
@@ -118,14 +119,17 @@ class cosReduce(object):
         all_files = []
         needed_files = []
 
-        for i in range(len(self.rootname[i])):
+        for i in range(len(self.rootname)):
             for letter in ['a', 'b']:
                 fn = os.path.join(self.input_path, self.rootname[i] + '_corrtag_{}.fits'.format(letter))
                 hdu = fits.open(fn)
 
                 for ft in filetypes:
-                    if hdu[0].header[ft] not in needed_files:
-                        all_files.append(hdu[0].header[ft])
+                    try:
+                        if hdu[0].header[ft] not in needed_files:
+                            all_files.append(hdu[0].header[ft])
+                    except:
+                        pass
                         
                 hdu.close()
 
@@ -135,8 +139,8 @@ class cosReduce(object):
         downloaded = os.listdir(path)
 
         for fn in all_files:
-            if fn[0].split('$')[-1] not in downloaded and l[0]!='N/A':
-                needed_files.append(fn)
+            if fn.split('$')[-1] not in downloaded and fn!='N/A':
+                needed_files.append(fn.split('$')[-1])
 
         if len(needed_files) > 0:
             return needed_files
@@ -160,8 +164,8 @@ class cosReduce(object):
         reduced_path : str
            Where the reduced data is stored.
         """
-        path_a = os.mkdir(os.path.join(output_path, 'a'))
-        path_b = os.mkdir(os.path.join(output_path, 'b'))
+        path_a = os.path.join(output_path, 'a')
+        path_b = os.path.join(output_path, 'b')
 
         if os.path.exists(output_path):
             if not os.path.exists(path_a):
