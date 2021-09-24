@@ -46,6 +46,18 @@ class cosReduce(object):
         self.orbit = None
         self.times = None
 
+        self.wavelength = None
+        self.flux = None
+        self.flux_err = None
+
+        self.interp_wavelength = None
+        self.interp_flux = None
+        self.interp_flux_err = None
+
+        self.binned_wavelength = None
+        self.binned_flux = None
+        self.binned_flux_err = None
+
 
     def split_corrtag(self, output_path, increment=30, 
                       starttime=None, endtime=None, time_list=None):
@@ -382,3 +394,56 @@ class cosReduce(object):
         self.interp_wavelength = np.full(interp_flux.shape, finer_wavelength)
         self.interp_flux = interp_flux + 0.0
         self.interp_flux_err = interp_flux_err + 0.0
+
+
+    def bin(self, binsize=3, type='interpolated'):
+        """
+        Bins the wavelength, flux, and flux error arrays 
+        by a given binsize.
+
+        Parameters
+        ----------
+        binsize : int, optional
+           The binsize by which to bin the data. Default 
+           is 3.
+        type : str, optional
+           Which flux to bin. Default is `interpolated`.
+           The other option is `normal`.
+           
+        Attributes
+        ----------
+        binned_wavelength : np.ndarray
+           Binned wavelength array.
+        binned_flux : np.ndarray
+           Binned flux array.
+        binned_flux_err : np.ndarray
+           Binned flux error array.
+        """
+        if type == 'interpolated':
+            w = self.interp_wavelength + 0.0
+            f = self.interp_flux + 0.0
+            e = self.interp_flux_err + 0.0
+        elif type == 'normal':
+            w = self.wavelength + 0.0
+            f = self.flux + 0.0
+            e = self.flux_err + 0.0
+        else:
+            return('Flux type not implemented.')
+        
+        for i in tqdm(range(len(f))):
+            lk = LightCurve(time=w[i],
+                            flux=f[i],
+                            flux_err=e[i]).bin(binsize=binsize)
+
+            if i == 0:
+                bw = np.zeros((len(f),len(lk.time.value)))
+                bf = np.zeros((len(f),len(lk.time.value)))
+                be = np.zeros((len(f),len(lk.time.value)))
+                
+            bw[i] = lk.time.value + 0.0
+            bf[i] = lk.flux.value + 0.0
+            be[i] = lk.flux_err.value + 0.0
+
+        self.binned_wavelength = bw + 0.0
+        self.binned_flux = bf + 0.0
+        self.binned_flux_err = be + 0.0
