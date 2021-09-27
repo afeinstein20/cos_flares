@@ -4,6 +4,7 @@ from astropy import units
 from astropy.io import fits
 import matplotlib.pyplot as plt
 from scipy.signal import gaussian
+from scipy.signal import find_peaks
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
 from astropy.table import Table, Column
@@ -401,9 +402,11 @@ class FlaresWithCOS(object):
                            self.wavelength[0][reg][-1], 
                            len(lsf))
 
-        f = interp1d(self.wavelength[0][reg], np.nanmedian(self.flux[mask,:][:,reg], axis=0))
+        f = interp1d(self.wavelength[0][reg], 
+                     np.nanmedian(self.flux[mask,:][:,reg], axis=0))
         
-        ferr = interp1d(self.wavelength[0][reg], np.sqrt( np.nansum( self.flux_err[mask,:][:,reg]**2, axis=0) ))
+        ferr = interp1d(self.wavelength[0][reg], 
+                        np.sqrt( np.nansum( self.flux_err[mask,:][:,reg]**2, axis=0) ))
 
         f = f(wave)/1e-14
         ferr = ferr(wave)/1e-14/len(reg)
@@ -424,3 +427,34 @@ class FlaresWithCOS(object):
         c = np.convolve(gaussian(wave, x.x[0], x.x[1], x.x[2]), lsf*x.x[3], 'same')/x.x[4]
         print(x.x)
         return wave, f, ferr, c
+
+
+    def new_lines(self, template, distance=150, prominence=None):
+        """
+        Marks peaks in a spectrum that are defined as `peaks` by 
+        scipy.signal.find_peaks. This function can be used to find new
+        emission lines that may have appeared in-flare.
+
+        Parameters
+        ----------
+        template : array
+           The spectrum used to identify peaks in.
+        distance : array or int, optional
+           Required minimal horizontal distance in samples between 
+           neighboring peaks. Default is 150.
+        prominance: array or int, optional
+           Required prominence of peaks. If a list is passed in, the
+           first element is interpreted as the minimal and the second,
+           if supplied, as the maximal required prominence. Default
+           is None.
+        
+        Returns
+        -------
+        peaks : np.array
+           Array of args to where peaks in the data are identified.
+        """
+        
+        peaks, _ = find_peaks(template, distance=distance, prominence=prominence)
+        return peaks
+
+
