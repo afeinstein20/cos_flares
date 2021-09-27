@@ -331,13 +331,11 @@ class FlaresWithCOS(object):
 
     def model_line_shape(self, ion, mask, shape='gaussian',
                          ext=100, ngauss=1, 
-                         mu = np.array([0]),
-                         std = np.array([0.1]),
-                         sf = np.array([0.3])):
+                         mu=[0], std=[0.1], sf=[0.3]):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
-        a chi-squared fit.
+        a chi-squared fit. The line profile is fit in velocity space.
 
         Parameters
         ----------
@@ -388,10 +386,10 @@ class FlaresWithCOS(object):
             nonlocal ngauss
 
             if ngauss > 1:
-                gmodel = np.zeros(len(x))
-                for i in np.arange(0, ngauss*2, ngauss, dtype=int):
-                    temp = var[i:i+3]
-                    gmodel += gaussian(x, temp)
+                gmodel = np.zeros((ngauss, len(x)))
+                for i,j in enumerate(np.arange(0, ngauss*2, ngauss, dtype=int)):
+                    gmodel[i] = gaussian(x, var[j:j+3])
+                gmodel = np.nansum(gmodel, axis=1)
             else:
                 gmodel = gaussian(x, var[:-2])
 
@@ -403,7 +401,6 @@ class FlaresWithCOS(object):
             sys.exit("List of mean values/standard deviations/scaling factors != ngauss.")
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
-        mu = np.full(ngauss, wc)
 
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
@@ -418,18 +415,18 @@ class FlaresWithCOS(object):
         reg = np.where( (velocity >= vmin-ext) & (velocity <= vmax+ext) )[0]
 
         # interpolate to the same length as the line spread profile #
-        wave = np.linspace(self.wavelength[0][reg][0], 
-                           self.wavelength[0][reg][-1], 
-                           len(lsf))
+        vel = np.linspace(velocity[reg][0], 
+                          velocity[reg][-1], 
+                          len(lsf))
 
-        f = interp1d(self.wavelength[0][reg], 
-                     np.nanmedian(self.flux[mask,:][:,reg], axis=0))
+        f = interp1d(velocity,
+                     np.nanmedian(self.flux[mask,:], axis=0))
         
-        ferr = interp1d(self.wavelength[0][reg], 
-                        np.sqrt( np.nansum( self.flux_err[mask,:][:,reg]**2, axis=0) ))
+        ferr = interp1d(velocity,
+                        np.sqrt( np.nansum( self.flux_err[mask,:]**2, axis=0) ))
 
-        f = f(wave)/1e-14
-        ferr = ferr(wave)/1e-14/len(reg)
+        f = f(vel)/1e-14
+        ferr = ferr(vel)/1e-14/len(reg)
 
         # handles more than 1 gaussian to fit into the model
         if ngauss > 1:
@@ -438,9 +435,9 @@ class FlaresWithCOS(object):
             i, x = 0, 0
             while x < ngauss:
                 x0[i:i+3] = np.array([mu[x], std[x], sf[x]])
-                bounds.append((wave.min(), wave.max()))
-                bounds.append((0.1, 100))
-                bounds.append((1, 20))
+                bounds.append((vel.min(), vel.max()))
+                bounds.append((0.01, 2000))
+                bounds.append((1, 3000))
                 i += 3
                 x += 1
 
@@ -452,23 +449,34 @@ class FlaresWithCOS(object):
         # handles a single gaussian model
         elif ngauss == 1:
             x0 = [mu[0], std[0], f[0], 10, 100]
-            bounds = ((wave.min(), wave.max()), (0.1, 100), (1,20),
-                      (1,100), (1,300))
+            bounds = ((vel.min(), vel.max()), 
+                      (0.01, 2000), 
+                      (1,3000),
+                      (1,100), 
+                      (1,300))
 
-        print(x0)
         # initial guess for the scipy.optimize.minimize function
         x = minimize(chiSquare, x0=x0,
                      bounds=bounds,
-                     args=(wave,
+                     args=(vel,
                            f,
                            ferr,
                            lsf),
                      method='L-BFGS-B')
 
-        return x.x
-#        c = np.convolve(gaussian(wave, x.x[0], x.x[1], x.x[2]), lsf*x.x[3], 'same')/x.x[4]
-#        print(x.x)
-#        return wave, f, ferr, c
+        if ngauss == 1:
+            gmodel = gaussian(vel, x.x[0:3])
+
+        elif ngauss > 1:
+            gmodel = np.zeros((ngauss,len(vel)))
+            for i,j in enumerate(np.arange(0, ngauss*2, ngauss, dtype=int)):
+                gmodel[i] = gaussian(vel, x.x[j:j+3])
+            gmodel = np.nansum(gmodel, axis=1)
+
+        c = np.convolve(gmodel, lsf*x.x[-2], 'same')/x.x[-1]
+        
+
+        return vel, f, ferr, c, x
 
 
     def new_lines(self, template, distance=150, prominence=None):
