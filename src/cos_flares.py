@@ -1,4 +1,4 @@
-import os
+import os, sys
 import numpy as np
 from astropy import units
 from astropy.io import fits
@@ -330,7 +330,10 @@ class FlaresWithCOS(object):
 
 
     def model_line_shape(self, ion, mask, shape='gaussian',
-                         ext=100, ngauss=1, x0=[0, 0.1, 0.3, 10, 100]):
+                         ext=100, ngauss=1, 
+                         mu = np.array([0]),
+                         std = np.array([0.1]),
+                         sf = np.array([0.3])):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
@@ -351,15 +354,22 @@ class FlaresWithCOS(object):
            line profile can be well fit to the data. Default = 100 [km/s].
         ngauss : int, optional
            The number of Gaussians used to fit the profile. Default is 1.
-        x0 : list, optional
-           The initial guess values for the Gaussian models. x0 takes in 
-           the following: center wavelength, mean, std, f (gaussian scaling
-           factor), and fc (a scaling factor for the convolved model). 
-           Default is [center wavelength for the ion, 0.1, 0.3, 10, 100].
+        mu : list, optional
+           The initial guess for the mean of the Gaussians to fit the 
+           line profile. Should be of same length as `ngauss`. Default is [0].
+        std : list, optional
+           The initial guess for the standard deviation of the Gaussians to
+           fit the line profile. Should be of same length as `ngauss`.
+           Default is [0.1].
+        sf : list, optional
+           The initial guess for the scaling factor of the Gaussians to fit
+           the line profile. Should be of same length as `ngauss`. Default is
+           [0.3].
         """
-        def gaussian(x, mu, std, f):
+        def gaussian(x, args):
             """ A gaussian profile model.
             """
+            mu, std, f = args
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
             g = f / denom * np.exp(exp)
@@ -375,15 +385,25 @@ class FlaresWithCOS(object):
             """ ChiSquare fit of the convolved line
                 profile with the data.
             """
-            mu, std, f, cf, af = var
-            gmodel = gaussian(x, mu, std, f)
-            conv = conv_model(lsf*cf, gmodel)
-            conv /= af
+            nonlocal ngauss
+
+            if ngauss > 1:
+                gmodel = np.zeros(len(x))
+                for i in np.arange(0, ngauss*2, ngauss, dtype=int):
+                    temp = var[i:i+3]
+                    gmodel += gaussian(x, temp)
+            else:
+                gmodel = gaussian(x, var[:-2])
+
+            conv = conv_model(lsf*var[-2], gmodel)
+            conv /= var[-1]
             return np.nansum( (y-conv)**2.0 / yerr**2.0 )
 
+        if (len(mu) != ngauss) or (len(std) != ngauss) or (len(sf) != ngauss):
+            sys.exit("List of mean values/standard deviations/scaling factors != ngauss.")
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
-        x0[0] = wc + 0.0
+        mu = np.full(ngauss, wc)
 
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
@@ -411,22 +431,44 @@ class FlaresWithCOS(object):
         f = f(wave)/1e-14
         ferr = ferr(wave)/1e-14/len(reg)
 
+        # handles more than 1 gaussian to fit into the model
+        if ngauss > 1:
+            x0 = np.zeros(3*ngauss+2)
+            bounds = []
+            i, x = 0, 0
+            while x < ngauss:
+                x0[i:i+3] = np.array([mu[x], std[x], sf[x]])
+                bounds.append((wave.min(), wave.max()))
+                bounds.append((0.1, 100))
+                bounds.append((1, 20))
+                i += 3
+                x += 1
+
+            x0[-2] = 10
+            bounds.append((1,100))
+            x0[-1] = 100
+            bounds.append((1,300))
+
+        # handles a single gaussian model
+        elif ngauss == 1:
+            x0 = [mu[0], std[0], f[0], 10, 100]
+            bounds = ((wave.min(), wave.max()), (0.1, 100), (1,20),
+                      (1,100), (1,300))
+
+        print(x0)
         # initial guess for the scipy.optimize.minimize function
         x = minimize(chiSquare, x0=x0,
-                     bounds=((wave.min(), wave.max()),
-                             (0.1,100),
-                             (1,20),
-                             (1,100),
-                             (1,300)),
+                     bounds=bounds,
                      args=(wave,
                            f,
                            ferr,
                            lsf),
                      method='L-BFGS-B')
 
-        c = np.convolve(gaussian(wave, x.x[0], x.x[1], x.x[2]), lsf*x.x[3], 'same')/x.x[4]
-        print(x.x)
-        return wave, f, ferr, c
+        return x.x
+#        c = np.convolve(gaussian(wave, x.x[0], x.x[1], x.x[2]), lsf*x.x[3], 'same')/x.x[4]
+#        print(x.x)
+#        return wave, f, ferr, c
 
 
     def new_lines(self, template, distance=150, prominence=None):
