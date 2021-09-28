@@ -2,6 +2,7 @@ import os, sys
 import numpy as np
 from astropy import units
 from astropy.io import fits
+from lmfit.models import Model
 import matplotlib.pyplot as plt
 from scipy.signal import gaussian
 from scipy.signal import find_peaks
@@ -52,6 +53,9 @@ class FlaresWithCOS(object):
         self.width_table = Table()
         self.error_table = Table()
         self.fuv130 = None
+        self.continuum_mask = None
+
+        self.flux_units =  units.erg / units.s / units.cm**2 / units.AA
 
 
     def load_line_table(self, path, fname='line_table.txt',
@@ -257,11 +261,47 @@ class FlaresWithCOS(object):
             flux = self.fuv130 + 0.0
 
         Fq = np.nanmedian(flux[qmask]/10**-13) * units.erg / units.s / units.cm**2
-        Ff = (flux[fmask]/10**-13) * units.erg / units.s / units.cm**2
+        Ff = (flux[fmask]/10**-13) * units.erg / units.s / units.cm**2 / units.AA
 
         eng = np.trapz(Ff-Fq, x=self.time[fmask]) * 4 * np.pi * d**2
         dur = np.trapz((Ff-Fq)/Fq, x=self.time[fmask])
         return eng, dur
+
+    def build_sed(self, d, mask=None):
+        """
+        Calculates the flux for given regions of the spectrum. This
+        will loop through all spectra in `self.flux`.
+
+        Parameters
+        ----------
+        d : astropy.units.Unit
+           The distance to the star with the corresponding distance
+           units. 
+        mask : np.array, optional
+           A mask for what region to calculate the flux. Default is None.
+           If the mask is None, it will calculate the flux in regions
+           of the continuum.
+
+        Returns
+        ----------
+        sed : np.ndarray
+           An array of shape `self.flux` that has the calculated flux
+           in regions applied by the input mask.
+        """
+        if mask is None:
+            if self.continuum_mask is None:
+                self.identify_continuum()
+            mask = self.continuum_mask[0] == 0
+
+        sed = np.zeros(len(self.flux))
+            
+        for i in range(len(self.flux)):
+            eng = np.trapz(self.flux[i][mask]*self.flux_units, 
+                           x=self.wavelength[i][mask]*units.AA) * 4 * np.pi * d**2
+            eng = eng.to(units.erg/units.s)
+            sed[i] = eng.value
+
+        return sed
 
 
     def flare_model(self, amp, t0, rise, decay):
@@ -330,8 +370,7 @@ class FlaresWithCOS(object):
 
 
     def model_line_shape(self, ion, mask, shape='gaussian',
-                         ext=100, ngauss=1, 
-                         mu=[0], std=[0.1], sf=[0.3]):
+                         ext=100, ngauss=1):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
@@ -352,56 +391,28 @@ class FlaresWithCOS(object):
            line profile can be well fit to the data. Default = 100 [km/s].
         ngauss : int, optional
            The number of Gaussians used to fit the profile. Default is 1.
-        mu : list, optional
-           The initial guess for the mean of the Gaussians to fit the 
-           line profile. Should be of same length as `ngauss`. Default is [0].
-        std : list, optional
-           The initial guess for the standard deviation of the Gaussians to
-           fit the line profile. Should be of same length as `ngauss`.
-           Default is [0.1].
-        sf : list, optional
-           The initial guess for the scaling factor of the Gaussians to fit
-           the line profile. Should be of same length as `ngauss`. Default is
-           [0.3].
-        """
-        def gaussian(x, args):
-            """ A gaussian profile model.
-            """
-            mu, std, f = args
+        x0 : np.ndarray, optional
+           The list of initial guesses for each Gaussian model. x0 should
+           be of shape (ngauss,4), where the 4 entries are: 
+           mu (mean), std (standard deviation), sf (Gaussian scaling factor),
+           scale (additional scaling factor). Default is 
+           x0 = [0, 20, 14, 4].
+        default_bounds : np.ndarray, optional
+           The list of bounds to use in the scipy.optimize.minimize function.
+           Can either give 1 set of bounds for mu, std, sf, and scale
+           (len(default_bounds)==4) or bounds for each parameter passed in
+           (len(default_bounds)==4*ngauss). Default is [(-100,100), (1,100),
+           (1,3000), (1,20)].
+           """
+        def gaussian(x, mu, std, f):
+            nonlocal lsf
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
             g = f / denom * np.exp(exp)
-            return g 
+            return np.convolve(lsf, g, 'same')
 
-        def conv_model(lsf, gauss):
-            """ Convolves LSF with line profile.
-            """
-            conv = np.convolve(lsf, gauss, mode='same')
-            return conv
-
-        def chiSquare(var, x, y, yerr, lsf):
-            """ ChiSquare fit of the convolved line
-                profile with the data.
-            """
-            nonlocal ngauss
-
-            if ngauss > 1:
-                gmodel = np.zeros((ngauss, len(x)))
-                for i,j in enumerate(np.arange(0, ngauss*2, ngauss, dtype=int)):
-                    gmodel[i] = gaussian(x, var[j:j+3])
-                gmodel = np.nansum(gmodel, axis=1)
-            else:
-                gmodel = gaussian(x, var[:-2])
-
-            conv = conv_model(lsf*var[-2], gmodel)
-            conv /= var[-1]
-            return np.nansum( (y-conv)**2.0 / yerr**2.0 )
-
-        if (len(mu) != ngauss) or (len(std) != ngauss) or (len(sf) != ngauss):
-            sys.exit("List of mean values/standard deviations/scaling factors != ngauss.")
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
-
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
 
@@ -426,58 +437,24 @@ class FlaresWithCOS(object):
                         np.sqrt( np.nansum( self.flux_err[mask,:]**2, axis=0) ))
 
         f = f(vel)/1e-14
-        ferr = ferr(vel)/1e-14/len(reg)
+        ferr = ferr(vel)/1e-14/np.sqrt(len(reg))
 
-        # handles more than 1 gaussian to fit into the model
-        if ngauss > 1:
-            x0 = np.zeros(3*ngauss+2)
-            bounds = []
-            i, x = 0, 0
-            while x < ngauss:
-                x0[i:i+3] = np.array([mu[x], std[x], sf[x]])
-                bounds.append((vel.min(), vel.max()))
-                bounds.append((0.01, 2000))
-                bounds.append((1, 3000))
-                i += 3
-                x += 1
+        for i in range(ngauss):
+            if i == 0:
+                gmodel = Model(gaussian, prefix='g{}_'.format(i))
+            else:
+                gmodel += Model(gaussian, prefix='g{}_'.format(i))
+        pars = gmodel.make_params()
 
-            x0[-2] = 10
-            bounds.append((1,100))
-            x0[-1] = 100
-            bounds.append((1,300))
+        keys = ['mu', 'std', 'f']
+        for i in range(ngauss):
+            pars['g{}_{}'.format(i, 'mu')].set(value=0, min=-100, max=100)
+            pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
+            pars['g{}_{}'.format(i, 'f')].set(value=20, min=1, max=400)
 
-        # handles a single gaussian model
-        elif ngauss == 1:
-            x0 = [mu[0], std[0], f[0], 10, 100]
-            bounds = ((vel.min(), vel.max()), 
-                      (0.01, 2000), 
-                      (1,3000),
-                      (1,100), 
-                      (1,300))
-
-        # initial guess for the scipy.optimize.minimize function
-        x = minimize(chiSquare, x0=x0,
-                     bounds=bounds,
-                     args=(vel,
-                           f,
-                           ferr,
-                           lsf),
-                     method='L-BFGS-B')
-
-        if ngauss == 1:
-            gmodel = gaussian(vel, x.x[0:3])
-
-        elif ngauss > 1:
-            gmodel = np.zeros((ngauss,len(vel)))
-            for i,j in enumerate(np.arange(0, ngauss*2, ngauss, dtype=int)):
-                gmodel[i] = gaussian(vel, x.x[j:j+3])
-            gmodel = np.nansum(gmodel, axis=1)
-
-        c = np.convolve(gmodel, lsf*x.x[-2], 'same')/x.x[-1]
-        
-
-        return vel, f, ferr, c, x
-
+        init = gmodel.eval(pars, x=vel)
+        out = gmodel.fit(f, pars, x=vel, weights=ferr)
+        return vel, f, ferr, out
 
     def new_lines(self, template, distance=150, prominence=None):
         """
@@ -502,8 +479,7 @@ class FlaresWithCOS(object):
         -------
         peaks : np.array
            Array of args to where peaks in the data are identified.
-        """
-        
+        """        
         peaks, _ = find_peaks(template, distance=distance, prominence=prominence)
         return peaks
 
@@ -526,10 +502,10 @@ class FlaresWithCOS(object):
                           [1262.399, 1263.967], [1268.559, 1273.974], [1281.396, 1287.493], 
                           [1290.494, 1293.803], [1307.064, 1308.703], [1319.494, 1322.910], 
                           [1330.349, 1332.884], [1337.703, 1341.813], [1341.116, 1350.847] ])
-        cont_inds = np.ones(self.wavelength.shape)
+        cont_inds = np.ones(self.wavelength.shape, dtype=int)
 
         for i in range(len(self.wavelength)):
-            for c in enumerate(cont):
+            for c in cont:
                 inds = np.where((self.wavelength[i] >= c[0]) &
                                 (self.wavelength[i] <= c[1]) )[0]
                 cont_inds[i][inds] = 0
