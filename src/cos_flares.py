@@ -508,3 +508,30 @@ class FlaresWithCOS(object):
         return peaks
 
 
+    def identify_continuum(self):
+        """
+        Identifies region of the continuum (i.e. there are no strong 
+        emission features) in order to build a spectral energy distribution.
+        
+        Attributes
+        ----------
+        contiuum_mask : np.ndarray
+           A binary mask for the template that corresponds to the continuum
+           isolated regions.
+        """
+        cont = np.array([ [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923], 
+                          [1140.873, 1145.141], [1146.285, 1151.544], [1152.602, 1155.579], 
+                          [1159.276, 1163.222], [1164.565, 1173.959], [1178.669, 1188.363], 
+                          [1195.162, 1196.864], [1201.748, 1203.862], [1227.056, 1236.921],
+                          [1262.399, 1263.967], [1268.559, 1273.974], [1281.396, 1287.493], 
+                          [1290.494, 1293.803], [1307.064, 1308.703], [1319.494, 1322.910], 
+                          [1330.349, 1332.884], [1337.703, 1341.813], [1341.116, 1350.847] ])
+        cont_inds = np.ones(self.wavelength.shape)
+
+        for i in range(len(self.wavelength)):
+            for c in enumerate(cont):
+                inds = np.where((self.wavelength[i] >= c[0]) &
+                                (self.wavelength[i] <= c[1]) )[0]
+                cont_inds[i][inds] = 0
+
+        self.continuum_mask = cont_inds
