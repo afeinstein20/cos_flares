@@ -56,6 +56,7 @@ class FlaresWithCOS(object):
         self.continuum_mask = None
 
         self.flux_units =  units.erg / units.s / units.cm**2 / units.AA
+        self.wavelength_units = units.AA
 
 
     def load_line_table(self, path, fname='line_table.txt',
@@ -84,7 +85,7 @@ class FlaresWithCOS(object):
         """
         self.line_table = Table.read(os.path.join(path, fname),
                                      format=format)
-
+        
 
     def to_velocity(self, wave, mid=None):
         """ 
@@ -391,27 +392,20 @@ class FlaresWithCOS(object):
            line profile can be well fit to the data. Default = 100 [km/s].
         ngauss : int, optional
            The number of Gaussians used to fit the profile. Default is 1.
-        x0 : np.ndarray, optional
-           The list of initial guesses for each Gaussian model. x0 should
-           be of shape (ngauss,4), where the 4 entries are: 
-           mu (mean), std (standard deviation), sf (Gaussian scaling factor),
-           scale (additional scaling factor). Default is 
-           x0 = [0, 20, 14, 4].
-        default_bounds : np.ndarray, optional
-           The list of bounds to use in the scipy.optimize.minimize function.
-           Can either give 1 set of bounds for mu, std, sf, and scale
-           (len(default_bounds)==4) or bounds for each parameter passed in
-           (len(default_bounds)==4*ngauss). Default is [(-100,100), (1,100),
-           (1,3000), (1,20)].
-           """
-        def gaussian(x, mu, std, f):
-            nonlocal lsf
-            exp = -0.5 * (x-mu)**2 / std**2
-            denom = std * np.sqrt(np.pi * 2.0)
-            g = f / denom * np.exp(exp)
-            return np.convolve(lsf, g, 'same')
 
-        
+        Returns
+        -------
+        x : np.array
+           The velocity array fit to the data.
+        y : np.array
+           The flux array that was fit (i.e. the data with the applied `mask`).
+        yerr : np.array
+           The flux error array that was fit.
+        model : np.array
+           The best-fit and 1-sigma models for the data.
+        chisquare : np.array                              
+           The chisquare fit of the model to the data.     
+        """
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
@@ -439,22 +433,85 @@ class FlaresWithCOS(object):
         f = f(vel)/1e-14
         ferr = ferr(vel)/1e-14/np.sqrt(len(reg))
 
-        for i in range(ngauss):
-            if i == 0:
-                gmodel = Model(gaussian, prefix='g{}_'.format(i))
-            else:
-                gmodel += Model(gaussian, prefix='g{}_'.format(i))
-        pars = gmodel.make_params()
-
-        keys = ['mu', 'std', 'f']
-        for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=0, min=-100, max=100)
-            pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
-            pars['g{}_{}'.format(i, 'f')].set(value=20, min=1, max=400)
-
+        # builds and evaluates the lmfit gaussian model
+        gmodel, pars = self.build_lmfit(ngauss)
         init = gmodel.eval(pars, x=vel)
         out = gmodel.fit(f, pars, x=vel, weights=ferr)
         return vel, f, ferr, out
+
+
+    def gaussian(self, x, mu, std, f, off):
+        """ 
+        The Gaussian function used in the line profile fit.
+        
+        Parameters
+        ----------
+        x : np.array
+           The x-array to evaluate the Gaussian over.
+        mu : float
+           The mean value of the Gaussian.
+        std : float
+           The standard deviation of the Gaussian.
+        f : float
+           The scaling factor for the Gaussian.
+        off : float
+           The offset for the Gaussian.
+        lsf : np.array
+           The line shape function to convolve with
+           the Gaussian.
+
+        Returns
+        -------
+        conv : np.array
+           The Gaussian profile convolved with the 
+           line spread function.
+        """
+        exp = -0.5 * (x-mu)**2 / std**2
+        denom = std * np.sqrt(np.pi * 2.0)
+        g = f / denom * np.exp(exp)
+#        return np.convolve(x[1], g, 'same') + off
+        return g + off
+
+
+    def build_lmfit(self, ngauss, params=None):
+        """
+        Uses lmfit to create a multi-Gaussian model to fit to the
+        line profiiles.
+
+        Parameters
+        ----------
+        ngauss : int
+           The number of Gaussians to include in the model.
+        params : np.array, optional
+           An array of parameters to fit. Default is None. If params
+           is None, will use the default value, minimum, and maximum
+           as presented in Feinstein et al. (in prep). The Gaussian
+           function requires `mu`, `std`, `f`, and `off` values.
+
+        Returns
+        -------
+        gmodel : lmfit.model.Model
+           The multi-Gaussian combined model.
+        pars : lmfit.parameters.Parameters
+           The parameters for the lmfit model.
+        """
+        for i in range(ngauss):
+            if i == 0:
+                gmodel = Model(self.gaussian, prefix='g{}_'.format(i))
+            else:
+                gmodel += Model(self.gaussian, prefix='g{}_'.format(i))
+
+        if params is None:
+            pars = gmodel.make_params()
+
+            for i in range(ngauss):
+                pars['g{}_{}'.format(i, 'mu')].set(value=0, min=-200, max=200)
+                pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
+                pars['g{}_{}'.format(i, 'f')].set(value=20, min=1, max=400)
+                pars['g{}_{}'.format(i, 'off')].set(value=0, min=-5, max=20)
+
+        return gmodel, pars
+
 
     def new_lines(self, template, distance=150, prominence=None):
         """
