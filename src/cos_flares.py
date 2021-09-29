@@ -226,7 +226,7 @@ class FlaresWithCOS(object):
             fuv130[i] = np.trapz(self.flux[i][mask], 
                                  x=self.wavelength[i][mask])
 
-        self.fuv130 = fuv130 + 0.0
+        self.fuv130 = fuv130 * self.flux_units * units.AA
 
 
     def measure_flare_params(self, qmask, fmask, d, flux=None):
@@ -257,11 +257,11 @@ class FlaresWithCOS(object):
         """
         if flux is None:
             if self.fuv130 is None:
-                self.measure_FUV130()
+                self.measure_FUV130() * self.flux_units
             flux = self.fuv130 + 0.0
 
-        Fq = np.nanmedian(flux[qmask]/10**-13) * units.erg / units.s / units.cm**2
-        Ff = (flux[fmask]/10**-13) * units.erg / units.s / units.cm**2 / units.AA
+        Fq = np.nanmedian(flux[qmask]/10**-13) #* units.erg / units.s / units.cm**2
+        Ff = (flux[fmask]/10**-13) #* units.erg / units.s / units.cm**2
 
         eng = np.trapz(Ff-Fq, x=self.time[fmask]) * 4 * np.pi * d**2
         dur = np.trapz((Ff-Fq)/Fq, x=self.time[fmask])
@@ -404,13 +404,12 @@ class FlaresWithCOS(object):
            (len(default_bounds)==4*ngauss). Default is [(-100,100), (1,100),
            (1,3000), (1,20)].
            """
-        def gaussian(x, mu, std, f):
+        def gaussian(x, mu, std, f, off):
             nonlocal lsf
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
             g = f / denom * np.exp(exp)
-            return np.convolve(lsf, g, 'same')
-
+            return np.convolve(lsf, g, 'same') + off
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
@@ -446,11 +445,11 @@ class FlaresWithCOS(object):
                 gmodel += Model(gaussian, prefix='g{}_'.format(i))
         pars = gmodel.make_params()
 
-        keys = ['mu', 'std', 'f']
         for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=0, min=-100, max=100)
+            pars['g{}_{}'.format(i, 'mu')].set(value=0, min=vel.min(), max=vel.max())
             pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
-            pars['g{}_{}'.format(i, 'f')].set(value=20, min=1, max=400)
+            pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.1, max=400)
+            pars['g{}_{}'.format(i, 'off')].set(value=0, min=-5, max=5)
 
         init = gmodel.eval(pars, x=vel)
         out = gmodel.fit(f, pars, x=vel, weights=ferr)
