@@ -241,7 +241,7 @@ class cosReduce(object):
         self.fix_naming(self.path_b)
 
         self.add_orbits(os.listdir(self.path_a))
-        self.add_times(os.listdir(self.path_a))
+        self.add_times(self.path_a)
 
 
     def fix_naming(self, path):
@@ -257,7 +257,8 @@ class cosReduce(object):
         files = [os.path.join(path, i) for i in 
                  os.listdir(path) if i.endswith('x1d.fits')]
         new, cp = [], []
-        deflen = len(files[int(files/2)])
+
+        deflen = len(files[int(len(files)/2)])
 
         for fn in files:
             if len(fn) < deflen:
@@ -286,17 +287,19 @@ class cosReduce(object):
         orbit : np.array
            Array of orbit values, indexing at 0.
         """
+        files = np.sort([i for i in files if i.endswith('x1d.fits')])
+
         orbits = np.zeros(len(files))
 
         for i,fn in enumerate(files):
-            r = fn.split('_')[-3] # grabs the rootname
+            r = fn.split('_')[1] # grabs the rootname
             orbits[i] = np.where(np.array(self.rootname)==r)[0]
 
-        self.orbit = orbit
+        self.orbit = orbits
         return
 
 
-    def add_times(self, files):
+    def add_times(self, path):
         """
         Creates an array of times as extracted from the FITS
         headers.
@@ -311,6 +314,7 @@ class cosReduce(object):
         times : np.array
            Array of time values, given in seconds.
         """
+        files = np.sort([os.path.join(path, i) for i in os.listdir(path) if i.endswith('x1d.fits')])
         times = np.zeros((len(files),2))
 
         for i in range(len(files)):
@@ -324,7 +328,7 @@ class cosReduce(object):
         return
 
 
-    def interpolate(self, path=self.path_a):
+    def interpolate(self, path=None):
         """
         Interpolates the 1D spectra onto the same wavelength grid for an 
         easier comparison.
@@ -350,6 +354,9 @@ class cosReduce(object):
         interp_flux_err : np.ndarray
            Flux error interpolated onto the wavelength grid.
         """
+        if path is None:
+            path = self.path_a
+
         fn = np.sort([os.path.join(path, i) for i in os.listdir(path) if
                       i.endswith('x1d.fits')])
 
@@ -364,9 +371,9 @@ class cosReduce(object):
                                   x1ddata["error"][0]))
 
             if i == 0:
-                all_wave = np.zeros((len(fn_a), len(wavelengtha)))
-                all_flux = np.zeros((len(fn_a), len(fluxa)))
-                all_flux_err  = np.zeros((len(fn_a), len(erra)))
+                all_wave = np.zeros((len(fn), len(wavelength)))
+                all_flux = np.zeros((len(fn), len(flux)))
+                all_flux_err  = np.zeros((len(fn), len(err)))
 
             all_wave[i] = wavelength + 0.0
             all_flux[i] = flux + 0.0
@@ -384,7 +391,7 @@ class cosReduce(object):
         for i in range(len(all_flux)):
             f = interp1d(all_wave[i], all_flux[i])
             interp_flux[i] = f(finer_wavelength)+0.0
-            f = interp1d(all_wave[i], all_err[i])
+            f = interp1d(all_wave[i], all_flux_err[i])
             interp_err[i] = f(finer_wavelength)+0.0
 
         self.wavelength = all_wave + 0.0
@@ -393,7 +400,7 @@ class cosReduce(object):
         
         self.interp_wavelength = np.full(interp_flux.shape, finer_wavelength)
         self.interp_flux = interp_flux + 0.0
-        self.interp_flux_err = interp_flux_err + 0.0
+        self.interp_flux_err = interp_err + 0.0
 
 
     def bin(self, binsize=3, type='interpolated'):
