@@ -59,7 +59,7 @@ class FlaresWithCOS(object):
 
 
     def load_line_table(self, path, fname='line_table.txt',
-                        format='csv'):
+                        format='csv', comment='#'):
         """
         Loads in a table of lines. Table is organized
         as ion, central wavelength (AA), 
@@ -77,13 +77,17 @@ class FlaresWithCOS(object):
         format : str, optional
            The format the table is stored in. Default
            is `csv`.
+        comment : str, optional
+           If comments are present in the table, provide the 
+           string identifier. Default is `#`.
 
         Attributes
         ----------
         line_table : astropy.table.Table
         """
         self.line_table = Table.read(os.path.join(path, fname),
-                                     format=format)
+                                     format=format, 
+                                     comment=comment)
 
 
     def to_velocity(self, wave, mid=None):
