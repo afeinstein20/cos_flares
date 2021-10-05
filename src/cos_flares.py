@@ -308,7 +308,7 @@ class FlaresWithCOS(object):
         return sed
 
 
-    def flare_model(self, amp, t0, rise, decay):
+    def flare_model(self, amp, t0, rise, decay, t=None):
         """
         Models the flare with an array of times (for double-peaked
         events). Uses the standard model of a Gaussian rise and 
@@ -324,25 +324,125 @@ class FlaresWithCOS(object):
            Array of Gaussian rise factors to fit to the flare.
         decay : np.array
            Array of exponential decay factors to fit to the flare.
+        t : np.array
+           Time array to fit the data to. If t is None, will use
+           full time array (`self.time`).
         
         Returns
         -------
         model : np.array
            Flare model.
         """
-        gr = np.zeros(len(self.time))
-        ed = np.zeros(len(self.time))
-        flux = np.zeros(len(self.time))
+        if t is None:
+            t = self.time.value + 0.0
+
+        gr = np.zeros(len(t))
+        ed = np.zeros(len(t))
+        flux = np.zeros(len(t))
         
         for i in range(len(amp)):
-            g = amp[i] * np.exp( -(self.time[self.time<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) 
-            g += flux[self.time<t0[i]]
-            gr[self.time<t0[i]] += g
-            e = amp[i] * np.exp( -(self.time[self.time>=t0[i]] - t0[i]) / decay[i] ) + flux[self.time>=t0[i]]
-            ed[self.time>=t0[i]] += e
+            g = amp[i] * np.exp( -(t[t<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) 
+            g += flux[t<t0[i]]
+            gr[t<t0[i]] += g
+            e = amp[i] * np.exp( -(t[t>=t0[i]] - t0[i]) / decay[i] ) + flux[t>=t0[i]]
+            ed[t>=t0[i]] += e
 
         return gr + ed
 
+
+    def fit_flare(self, ion, mask, nflares=1, amp=None, t0=None, decay=None, rise=None):
+        """
+        Fits a flare model (Davenport et al. 2016) to the data. It
+        takes as many flares as input.
+
+        Parameters
+        ----------
+        ion : str
+           The ion to fit the flare model to.
+        mask : np.array
+           A mask that isolates the flare in question. Should be
+           of length `self.time`.
+        nflares : int, optional
+           The number of flares to fit. Default is 1.
+        amp : np.array, optional
+           A first guess at the amplitude of each flare for the flare
+           model. Should be of length `nflares`.
+           Default is None. If None, will take the maximum value
+           in the flux array.
+        t0: np.array, optional
+           A first guess at the peak time of each flare for the flare
+           model. Should be of length `nflares`. Default is None. 
+           If None, will take the time of maximum value in the flux 
+           array.
+        decay : np.array, optional
+           A first guess at the decay scaling factor for each flare.
+           Should be of length `nflares`. Default is None. If None,
+           will populate an array of values = 0.1.
+
+        Returns
+        -------
+        best_fit : np.array
+           The best fit values for the flare model. Returns array with
+           t0, amp, and decay values.
+        model : np.array
+           The flare model derived from the best fit values. Will be of
+           length = `flux`.
+        """
+
+        def chiSquare(args, x, y, yerr):
+            nonlocal nflares
+
+            amp   = args[0:nflares] + 0.0
+            t0    = args[nflares:nflares*2] + 0.0
+            rise  = args[nflares*2:nflares*3] + 0.0
+            decay = args[nflares*3:nflares*4] + 0.0
+            offset = args[-1] + 0.0
+
+            model = self.flare_model(t=x, t0=t0, amp=amp,
+                                     decay=decay, rise=rise)
+            model += offset
+            
+            return np.nansum( (y-model)**2.0 / yerr**2.0 )
+
+
+        time = np.array(self.time[mask].value) + 0.0
+        flux = np.array(self.width_table[ion][mask]) + 0.0
+        flux_err = np.array(self.error_table[ion][mask]) + 0.0
+
+        x0 = np.zeros(4*nflares + 1)
+        bounds = np.zeros((4*nflares+1,2))
+
+        guess = [amp, t0, rise, decay]
+        vbounds = [[flux.min(), flux.max()], [time.min(), time.max()],
+                   [0,100], [0,200]]
+
+        for i in range(4):
+            x0[nflares*i : nflares*(i+1)] = guess[i]
+            bounds[nflares*i : nflares*(i+1)] = vbounds[i]
+
+        x0[-1] = 0
+        bounds[-1] = [-5,5]
+
+        x = minimize(chiSquare,
+                     x0 = x0,
+                     bounds = bounds,
+                     args = (time, flux, flux_err),
+                     method='L-BFGS-B')
+
+        amp   = x.x[0:nflares] + 0.0
+        t0    = x.x[nflares:nflares*2] + 0.0
+        rise  = x.x[nflares*2:nflares*3] + 0.0
+        decay = x.x[nflares*3:nflares*4] + 0.0
+        offset = x.x[-1] + 0.0
+
+        m = self.flare_model(t=time, amp=amp,
+                             t0=t0, rise=rise,
+                             decay=decay) + offset
+                             
+        
+        return x, m
+        
+            
         
     def load_lsf_model(self, fname):
         """
@@ -498,7 +598,9 @@ class FlaresWithCOS(object):
            A binary mask for the template that corresponds to the continuum
            isolated regions.
         """
-        cont = np.array([ [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923], 
+        cont = np.array([ [1067.506, 1070.062], [1074.662, 1076.533], [1078.881, 1082.167],
+                          [1087.828, 1090.035], [1103.787, 1107.862], [1110.500, 1112.946],
+                          [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923], 
                           [1140.873, 1145.141], [1146.285, 1151.544], [1152.602, 1155.579], 
                           [1159.276, 1163.222], [1164.565, 1173.959], [1178.669, 1188.363], 
                           [1195.162, 1196.864], [1201.748, 1203.862], [1227.056, 1236.921],
