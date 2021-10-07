@@ -534,7 +534,7 @@ class FlaresWithCOS(object):
                           len(lsf))
 
         f = interp1d(velocity,
-                     np.nanmedian(self.flux[mask,:], axis=0))
+                     np.nanmean(self.flux[mask,:], axis=0))
         
         ferr = interp1d(velocity,
                         np.sqrt( np.nansum( self.flux_err[mask,:]**2, axis=0) ))
