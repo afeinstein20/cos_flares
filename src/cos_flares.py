@@ -182,7 +182,7 @@ class FlaresWithCOS(object):
             reg = np.where( (v.value >= vmin) & (v.value <= vmax) )[0]
             
             widths[i] = np.nansum(self.flux[x][reg])
-            errors[i] = np.nansum(self.flux_err[x][reg])/binsize
+            errors[i] = np.sqrt(np.nansum(self.flux_err[x][reg]**2))
 
         try:
             if ion is not None:
