@@ -1,8 +1,10 @@
 import numpy as np
+from lmfit.models import Model
 from astropy.table import Table
 from astropy import units, constants
 
-__all__ = ['load_data', 'load_binned_data', 'load_table', 'blackbody', 'load_inferno']
+__all__ = ['load_data', 'load_binned_data', 'load_table', 
+           'blackbody', 'load_inferno', 'build_lmfit']
 
 
 def load_data(fname='/Users/arcticfox/Documents/AUMic/reduced/data.npy'):
@@ -44,4 +46,43 @@ def blackbody(wavelength, T):
     e = (constants.h*constants.c)/(wavelength*constants.k_B*T)
     return frac * 1/(np.exp(e)-1)
 
-              
+def gaussian(x, mu, std, f, lsf):
+    exp = -0.5 * (x-mu)**2 / std**2
+    denom = std * np.sqrt(np.pi * 2.0)
+    g = f / denom * np.exp(exp)
+    return np.convolve(lsf, g, 'same')
+
+def build_lmfit(x, lsf, params, std=0):
+    """
+    Builds a gaussian model with lmfit parameters table.
+
+    Parameters
+    ----------
+    x : np.array
+    params : lmfit.parameter.Parameters
+    std : int, optional
+       Key to build a +/- 1 std model. Default is 0 (returns
+       best_fit). Other options = +1 (1 std model) or -1 (-1
+       std model).
+
+    Returns
+    -------
+    gmodel
+    """
+    nparams = 3
+    ngauss = int(len(params)/nparams)
+
+
+    for i in range(ngauss):
+        if i == 0:
+            gmodel = Model(gaussian, prefix='g{}_'.format(i))
+        else:
+            gmodel += Model(gaussian, prefix='g{}_'.format(i))
+
+    pars = gmodel.make_params()
+
+    for p in list(params.keys()):
+        pars[p].set(value=params[p].value + params[p].stderr * std)
+
+    init = gmodel.eval(pars, x=x, lsf=lsf)
+    return init

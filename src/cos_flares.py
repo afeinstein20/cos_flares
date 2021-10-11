@@ -308,7 +308,7 @@ class FlaresWithCOS(object):
         return sed
 
 
-    def flare_model(self, amp, t0, rise, decay, t=None):
+    def flare_model(self, x, amp, t0, rise, decay, offset_g, offset_e):
         """
         Models the flare with an array of times (for double-peaked
         events). Uses the standard model of a Gaussian rise and 
@@ -316,41 +316,39 @@ class FlaresWithCOS(object):
         
         Parameters
         ----------
-        amp : np.array
-           Array of amplitudes to fit.
-        t0 : np.array
-           Array of peak times of flare to fit.
-        rise : np.array
-           Array of Gaussian rise factors to fit to the flare.
-        decay : np.array
-           Array of exponential decay factors to fit to the flare.
-        t : np.array
-           Time array to fit the data to. If t is None, will use
-           full time array (`self.time`).
+        x : np.array
+           Time array to fit the data to.
+        amp : float
+           Amplitude of flare.
+        t0 : float
+           T0 of flare.
+        rise : float
+           Gaussian rise factor for flare.
+        decay : float
+           Exponential decay factor for flare.
         
         Returns
         -------
         model : np.array
            Flare model.
         """
-        if t is None:
-            t = self.time.value + 0.0
-
-        gr = np.zeros(len(t))
-        ed = np.zeros(len(t))
-        flux = np.zeros(len(t))
+        gr = np.zeros(len(x))
+        ed = np.zeros(len(x))
+        flux = np.zeros(len(x))
         
-        for i in range(len(amp)):
-            g = amp[i] * np.exp( -(t[t<t0[i]] - t0[i])**2.0 / (2.0*rise[i]**2.0) ) 
-            g += flux[t<t0[i]]
-            gr[t<t0[i]] += g
-            e = amp[i] * np.exp( -(t[t>=t0[i]] - t0[i]) / decay[i] ) + flux[t>=t0[i]]
-            ed[t>=t0[i]] += e
+        g = amp * np.exp( -(x[x<t0] - t0)**2.0 / (2.0*rise**2.0) )
+        g += flux[x<t0]
+        gr[x<t0] += g
+        gr[x<t0] += offset_g
 
+        e = amp * np.exp( -(x[x>=t0] - t0) / decay ) + flux[x>=t0]
+        ed[x>=t0] += e
+        ed[x>=t0] += offset_e
+        
         return gr + ed
 
 
-    def fit_flare(self, ion, mask, nflares=1, amp=None, t0=None, decay=None, rise=None):
+    def fit_flare(self, ion, mask, amp=None, t0=None, decay=None, rise=None, x=None):
         """
         Fits a flare model (Davenport et al. 2016) to the data. It
         takes as many flares as input.
@@ -362,8 +360,6 @@ class FlaresWithCOS(object):
         mask : np.array
            A mask that isolates the flare in question. Should be
            of length `self.time`.
-        nflares : int, optional
-           The number of flares to fit. Default is 1.
         amp : np.array, optional
            A first guess at the amplitude of each flare for the flare
            model. Should be of length `nflares`.
@@ -389,60 +385,41 @@ class FlaresWithCOS(object):
            length = `flux`.
         """
 
-        def chiSquare(args, x, y, yerr):
-            nonlocal nflares
-
-            amp   = args[0:nflares] + 0.0
-            t0    = args[nflares:nflares*2] + 0.0
-            rise  = args[nflares*2:nflares*3] + 0.0
-            decay = args[nflares*3:nflares*4] + 0.0
-            offset = args[-1] + 0.0
-
-            model = self.flare_model(t=x, t0=t0, amp=amp,
-                                     decay=decay, rise=rise)
-            model += offset
-            
-            return np.nansum( (y-model)**2.0 / yerr**2.0 )
-
-
         time = np.array(self.time[mask].value) + 0.0
         flux = np.array(self.width_table[ion][mask]) + 0.0
-        flux_err = np.array(self.error_table[ion][mask]) + 0.0
+        flux_err = np.array(self.error_table[ion][mask]) /10.0 #+ 0.0
 
-        x0 = np.zeros(4*nflares + 1)
-        bounds = np.zeros((4*nflares+1,2))
-
-        guess = [amp, t0, rise, decay]
-        vbounds = [[flux.min(), flux.max()], [time.min(), time.max()],
-                   [0,100], [0,200]]
-
-        for i in range(4):
-            x0[nflares*i : nflares*(i+1)] = guess[i]
-            bounds[nflares*i : nflares*(i+1)] = vbounds[i]
-
-        x0[-1] = 0
-        bounds[-1] = [-5,5]
-
-        x = minimize(chiSquare,
-                     x0 = x0,
-                     bounds = bounds,
-                     args = (time, flux, flux_err),
-                     method='L-BFGS-B')
-
-        amp   = x.x[0:nflares] + 0.0
-        t0    = x.x[nflares:nflares*2] + 0.0
-        rise  = x.x[nflares*2:nflares*3] + 0.0
-        decay = x.x[nflares*3:nflares*4] + 0.0
-        offset = x.x[-1] + 0.0
-
-        m = self.flare_model(t=time, amp=amp,
-                             t0=t0, rise=rise,
-                             decay=decay) + offset
-                             
-        
-        return x, m
-        
+        if x is not None:
+            finterp = interp1d(time, flux)
+            flux = finterp(x)
             
+            einterp = interp1d(time, flux_err)
+            flux_err = einterp(x)
+            time = x + 0.0
+
+        fmodel = Model(self.flare_model, prefix='f{0:02d}_'.format(0))
+
+        if len(amp) > 1:
+            for i in range(1, len(amp)):
+                fmodel += Model(self.flare_model, prefix='f{0:02d}_'.format(i))
+
+        pars = fmodel.make_params()
+        
+        for i in range(len(amp)):
+            pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
+            pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-60, max=t0[i]+60)
+            pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
+            pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
+            pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=1)
+            pars['f{0:02d}_offset_e'.format(i)].set(value=0, min=-1, max=1)
+
+        init = fmodel.eval(pars, x=time)
+        out  = fmodel.fit(flux,
+                          pars, x=time,
+                          weights=flux_err)
+        
+        return time, flux, flux_err, out
+        
         
     def load_lsf_model(self, fname):
         """
@@ -508,12 +485,12 @@ class FlaresWithCOS(object):
            (len(default_bounds)==4*ngauss). Default is [(-100,100), (1,100),
            (1,3000), (1,20)].
            """
-        def gaussian(x, mu, std, f, off):
+        def gaussian(x, mu, std, f):#, off):
             nonlocal lsf
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
             g = f / denom * np.exp(exp)
-            return np.convolve(lsf, g, 'same') + off
+            return np.convolve(lsf, g, 'same') #+ off
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
@@ -524,7 +501,7 @@ class FlaresWithCOS(object):
         lsf = self.lsf_table[self.lsf_table.colnames[argmin]].data
         lsf /= np.nanmax(lsf)
 
-        velocity, _ = self.to_velocity(self.wavelength[0], wc)
+        velocity, _ = self.to_velocity(np.nanmedian(self.wavelength[mask],axis=0),wc)
         velocity    = velocity.value + 0.0
         reg = np.where( (velocity >= vmin-ext) & (velocity <= vmax+ext) )[0]
 
@@ -549,15 +526,24 @@ class FlaresWithCOS(object):
                 gmodel += Model(gaussian, prefix='g{}_'.format(i))
         pars = gmodel.make_params()
 
+        if ngauss>=6:
+            mus = [0, -30, 30, -100,100, -150, 150, -200, 200]
+        else:
+            mus = np.zeros(ngauss)
+
         for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=0, min=vel.min(), max=vel.max())
+            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min(), max=vel.max())
             pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
             pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.1, max=400)
-            pars['g{}_{}'.format(i, 'off')].set(value=0, min=-5, max=5)
+            #pars['g{}_{}'.format(i, 'off')].set(value=0, min=-5, max=5)
 
         init = gmodel.eval(pars, x=vel)
-        out = gmodel.fit(f, pars, x=vel, weights=ferr)
-        return vel, f, ferr, out
+        out = gmodel.fit(f,
+                         pars, 
+                         x=vel,
+                         weights=ferr)
+        return vel, f, ferr, lsf, out
+
 
     def new_lines(self, template, distance=150, prominence=None):
         """
