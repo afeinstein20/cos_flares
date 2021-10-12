@@ -489,8 +489,8 @@ class FlaresWithCOS(object):
             nonlocal lsf
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
-            g = f / denom * np.exp(exp)
-            return np.convolve(lsf, g, 'same') #+ off
+            g = f / denom * np.exp(exp) 
+            return np.convolve(lsf, g, 'same')# + off
         
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
@@ -513,11 +513,13 @@ class FlaresWithCOS(object):
         f = interp1d(velocity,
                      np.nanmean(self.flux[mask,:], axis=0))
         
+        err = np.nansum(self.flux_err[mask,:], axis=0)
         ferr = interp1d(velocity,
-                        np.sqrt( np.nansum( self.flux_err[mask,:]**2, axis=0) ))
+                        np.sqrt(np.nansum(self.flux_err[mask,:]**2,axis=0))/len(self.flux[mask,:])/3.0)#[0]))
 
-        f = f(vel)/1e-14
-        ferr = ferr(vel)/1e-14/np.sqrt(len(reg))
+        lk = LightCurve(time=vel, flux=f(vel), flux_err=ferr(vel)).normalize()
+        f = lk.flux.value
+        ferr = lk.flux_err.value
 
         for i in range(ngauss):
             if i == 0:
@@ -527,21 +529,33 @@ class FlaresWithCOS(object):
         pars = gmodel.make_params()
 
         if ngauss>=6:
-            mus = [0, -30, 30, -100,100, -150, 150, -200, 200]
+            mus = np.array([0, -30, 30, -100,100, -150, 150, -200, 200],dtype=np.float32)
         else:
-            mus = np.zeros(ngauss)
+            fp,_ = find_peaks(f, width=15)
+            best = np.argsort(f[fp])[-ngauss:]
+            mus = vel[fp][best] + 0.0
+
+            if len(best) < ngauss:
+                fp,_ = find_peaks(f, width=5)
+                best = np.argsort(f[fp])[-ngauss:]
+                mus = vel[fp][best] + 0.0
+            if len(best) < ngauss:
+                mus=np.zeros(ngauss)
 
         for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min(), max=vel.max())
-            pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=100)
+            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+5, max=vel.max()-5)
+            pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=200)
             pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.1, max=400)
-            #pars['g{}_{}'.format(i, 'off')].set(value=0, min=-5, max=5)
+            #pars['g{}_{}'.format(i, 'off')].set(value=0, min=-0.5, max=0.5)
 
         init = gmodel.eval(pars, x=vel)
         out = gmodel.fit(f,
                          pars, 
                          x=vel,
-                         weights=ferr)
+                         weights=1.0/ferr,
+                         verbose=True,
+                         #method='L-BFGS-B', 
+                         max_nfev=3000)
         return vel, f, ferr, lsf, out
 
 

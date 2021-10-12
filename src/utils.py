@@ -82,7 +82,10 @@ def build_lmfit(x, lsf, params, std=0):
     pars = gmodel.make_params()
 
     for p in list(params.keys()):
-        pars[p].set(value=params[p].value + params[p].stderr * std)
+        if std > -2:
+            pars[p].set(value=params[p].value + params[p].stderr * std)
+        else:
+            pars[p].set(value=params[p].value)
 
     init = gmodel.eval(pars, x=x, lsf=lsf)
     return init
