@@ -2,6 +2,7 @@ import os, sys
 import numpy as np
 from astropy import units
 from astropy.io import fits
+from astropy import constants
 from lmfit.models import Model
 import matplotlib.pyplot as plt
 from scipy.signal import gaussian
@@ -10,6 +11,8 @@ from scipy.optimize import minimize
 from scipy.interpolate import interp1d
 from astropy.table import Table, Column
 from lightkurve.lightcurve import LightCurve
+
+from utils import *
 
 __all__ = ['FlaresWithCOS']
 
@@ -218,19 +221,26 @@ class FlaresWithCOS(object):
            Array of flux values that constitute the FUV130 band.
         """
         fuv130 = np.zeros(len(self.time.value))
+        fuv130_err = np.zeros(len(self.time.value))
 
         for i in range(len(self.wavelength)):
-            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1198.49)) |
-                             ((self.wavelength[i] >= 1201.71) & (self.wavelength[i] <= 1212.16)) |
-                             ((self.wavelength[i] >= 1219.18) & (self.wavelength[i] <= 1274.04)) |
-                             ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1354.49)) |
-                             ((self.wavelength[i] >= 1356.71) & (self.wavelength[i] <= 1357.59)) |
-                             ((self.wavelength[i] >= 1359.51) & (self.wavelength[i] <= 1428.90)) )[0]
+            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1197)) | #1198.49)) |
+                             #((self.wavelength[i] >= 1201.71) & (self.wavelength[i] <= 1212.16)) |
+                             ((self.wavelength[i] >= 1230) & (self.wavelength[i] <= 1274.04)) |
+                             ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1355.49)) )[0]#1354.49)) |
+                             #((self.wavelength[i] >= 1356.71) & (self.wavelength[i] <= 1357.59)) |
+                             #((self.wavelength[i] >= 1359.51) & (self.wavelength[i] <= 1428.90)) )[0]
 
-            fuv130[i] = np.trapz(self.flux[i][mask], 
+            fuv130[i] = np.trapz(self.flux[i][mask],
                                  x=self.wavelength[i][mask])
+            
+            fuv130_err[i] = np.sqrt(np.nansum(self.flux_err[i][mask]**2) / len(mask))
+#            fuv130_err[i] = np.sqrt(np.trapz(self.flux_err[i][mask]**2,
+#                                          x=self.wavelength[i][mask])/len(self.flux[i][mask]))
 
         self.fuv130 = fuv130 * self.flux_units * units.AA
+        self.fuv130_err = fuv130_err * self.flux_units * units.AA
+        return mask
 
 
     def measure_flare_params(self, qmask, fmask, d, flux=None):
@@ -263,6 +273,8 @@ class FlaresWithCOS(object):
             if self.fuv130 is None:
                 self.measure_FUV130() * self.flux_units
             flux = self.fuv130 + 0.0
+        if flux is not None:
+            flux = flux * self.flux_units / units.AA
 
         Fq = np.nanmedian(flux[qmask]/10**-13) #* units.erg / units.s / units.cm**2
         Ff = (flux[fmask]/10**-13) #* units.erg / units.s / units.cm**2
@@ -306,46 +318,6 @@ class FlaresWithCOS(object):
             sed[i] = eng.value
 
         return sed
-
-
-    def flare_model(self, x, amp, t0, rise, decay, offset_g, offset_e):
-        """
-        Models the flare with an array of times (for double-peaked
-        events). Uses the standard model of a Gaussian rise and 
-        exponential decay.
-        
-        Parameters
-        ----------
-        x : np.array
-           Time array to fit the data to.
-        amp : float
-           Amplitude of flare.
-        t0 : float
-           T0 of flare.
-        rise : float
-           Gaussian rise factor for flare.
-        decay : float
-           Exponential decay factor for flare.
-        
-        Returns
-        -------
-        model : np.array
-           Flare model.
-        """
-        gr = np.zeros(len(x))
-        ed = np.zeros(len(x))
-        flux = np.zeros(len(x))
-        
-        g = amp * np.exp( -(x[x<t0] - t0)**2.0 / (2.0*rise**2.0) )
-        g += flux[x<t0]
-        gr[x<t0] += g
-        gr[x<t0] += offset_g
-
-        e = amp * np.exp( -(x[x>=t0] - t0) / decay ) + flux[x>=t0]
-        ed[x>=t0] += e
-        ed[x>=t0] += offset_e
-        
-        return gr + ed
 
 
     def fit_flare(self, ion, mask, amp=None, t0=None, decay=None, rise=None, x=None):
@@ -397,11 +369,11 @@ class FlaresWithCOS(object):
             flux_err = einterp(x)
             time = x + 0.0
 
-        fmodel = Model(self.flare_model, prefix='f{0:02d}_'.format(0))
+        fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
 
         if len(amp) > 1:
             for i in range(1, len(amp)):
-                fmodel += Model(self.flare_model, prefix='f{0:02d}_'.format(i))
+                fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
 
         pars = fmodel.make_params()
         
@@ -505,6 +477,8 @@ class FlaresWithCOS(object):
         velocity    = velocity.value + 0.0
         reg = np.where( (velocity >= vmin-ext) & (velocity <= vmax+ext) )[0]
 
+        wave = self.wavelength[mask][:,reg]
+
         # interpolate to the same length as the line spread profile #
         vel = np.linspace(velocity[reg][0], 
                           velocity[reg][-1], 
@@ -556,7 +530,7 @@ class FlaresWithCOS(object):
                          verbose=True,
                          #method='L-BFGS-B', 
                          max_nfev=3000)
-        return vel, f, ferr, lsf, out
+        return vel, f, ferr, wave, lsf, out
 
 
     def new_lines(self, template, distance=150, prominence=None):
@@ -616,3 +590,33 @@ class FlaresWithCOS(object):
                 cont_inds[i][inds] = 0
 
         self.continuum_mask = cont_inds
+
+        
+    def blackbody(self, x, T, scaling):
+        """
+        Blackbody equation in wavelength.
+
+        Parameters
+        ----------
+        x : np.ndarray
+           Wavelength array.
+        T : float
+           Temperature of the blackbody.
+        scaling : float
+           Scaling the flux to the blackbody.
+        
+        Returns
+        -------
+        bb : np.ndarray
+           Log(Blackbody function).
+        """
+        T *= units.K
+        x *= units.AA
+        frac = 2.0 * constants.h * constants.c**2 / x**5
+        exp = (constants.h * constants.c) / (x * constants.k_B * T)
+        func =  frac * 1.0/(np.exp(exp) - 1.0)
+        func = func.to(self.flux_units)
+        return np.log10(func.value)*scaling
+
+
+#    def fit_blackbody(self)

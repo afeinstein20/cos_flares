@@ -4,7 +4,8 @@ from astropy.table import Table
 from astropy import units, constants
 
 __all__ = ['load_data', 'load_binned_data', 'load_table', 
-           'blackbody', 'load_inferno', 'build_lmfit']
+           'blackbody', 'load_inferno', 'build_lmfit',
+           'flare_model', 'gaussian']
 
 
 def load_data(fname='/Users/arcticfox/Documents/AUMic/reduced/data.npy'):
@@ -47,6 +48,7 @@ def blackbody(wavelength, T):
     return frac * 1/(np.exp(e)-1)
 
 def gaussian(x, mu, std, f, lsf):
+    """ A gaussian model. """
     exp = -0.5 * (x-mu)**2 / std**2
     denom = std * np.sqrt(np.pi * 2.0)
     g = f / denom * np.exp(exp)
@@ -72,7 +74,6 @@ def build_lmfit(x, lsf, params, std=0):
     nparams = 3
     ngauss = int(len(params)/nparams)
 
-
     for i in range(ngauss):
         if i == 0:
             gmodel = Model(gaussian, prefix='g{}_'.format(i))
@@ -88,4 +89,84 @@ def build_lmfit(x, lsf, params, std=0):
             pars[p].set(value=params[p].value)
 
     init = gmodel.eval(pars, x=x, lsf=lsf)
+    return init
+
+
+def flare_model(x, amp, t0, rise, decay, offset_g, offset_e):
+        """           
+        Models the flare with an array of times (for double-peaked
+        events). Uses the standard model of a Gaussian rise and   
+        exponential decay.
+
+        Parameters
+        ----------
+        x : np.array
+           Time array to fit the data to.
+        amp : float 
+           Amplitude of flare.
+        t0 : float  
+           T0 of flare.           
+        rise : float   
+           Gaussian rise factor for flare.
+        decay : float                    
+           Exponential decay factor for flare.
+
+        Returns
+        -------
+        model : np.array
+           Flare model. 
+        """
+        gr = np.zeros(len(x))
+        ed = np.zeros(len(x))
+        flux = np.zeros(len(x))
+
+        g = amp * np.exp( -(x[x<t0] - t0)**2.0 / (2.0*rise**2.0) )
+        g += flux[x<t0]
+        gr[x<t0] += g
+        gr[x<t0] += offset_g
+
+        e = amp * np.exp( -(x[x>=t0] - t0) / decay ) + flux[x>=t0]
+        ed[x>=t0] += e
+        ed[x>=t0] += offset_e
+
+        return gr + ed
+
+def build_lmfit_flare(x, params, std=0):
+    """
+    Builds the flare model using the output parameters from
+    lmfit.
+    
+    Parameters
+    ----------
+    x : np.array
+       X-axis (probably time).
+    params : lmfit.parameter.Parameters
+    nflares : 
+    std : int, optional 
+       Key to build a +/- 1 std model. Default is 0 (returns
+       best_fit). Other options = +1 (1 std model) or -1 (-1  
+       std model).
+
+    Returns
+    -------
+    fmodel
+    """
+    nparams = 5
+    nflares = int(len(params)/nparams)
+
+    for i in range(ngauss):
+        if i == 0:
+            fmodel = Model(flare_model, prefix='f{0:02d}_'.format(i))
+        else:
+            fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
+
+    pars = fmodel.make_params()
+
+    for p in list(params.keys()):
+        if std > -2:
+            pars[p].set(value=params[p].value + params[p].stderr * std)
+        else:
+            pars[p].set(value=params[p].value)
+
+    init = fmodel.eval(pars, x=x)
     return init

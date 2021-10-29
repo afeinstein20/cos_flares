@@ -236,9 +236,17 @@ class cosReduce(object):
         times : np.array
            Array of times extracted from FITS headers.
         """
+        try:
+            self.fix_naming(self.path_a)
+        except IndexError:
+            print('No files in path_a directory.')
+            pass
 
-        self.fix_naming(self.path_a)
-        self.fix_naming(self.path_b)
+        try:
+            self.fix_naming(self.path_b)
+        except IndexError:
+            print('No files in path_b directory.')
+            pass
 
         self.add_orbits(os.listdir(self.path_a))
         self.add_times(self.path_a)
@@ -328,7 +336,7 @@ class cosReduce(object):
         return
 
 
-    def interpolate(self, path=None):
+    def interpolate(self, path=None, offset=0.0):
         """
         Interpolates the 1D spectra onto the same wavelength grid for an 
         easier comparison.
@@ -364,7 +372,7 @@ class cosReduce(object):
             x1ddata = fits.getdata(fn[i])
             
             wavelength = np.concatenate((x1ddata["wavelength"][1],
-                                         x1ddata["wavelength"][0]))
+                                         x1ddata["wavelength"][0])) + offset
             flux = np.concatenate((x1ddata["flux"][1], 
                                    x1ddata["flux"][0]))
             err = np.concatenate((x1ddata["error"][1],
