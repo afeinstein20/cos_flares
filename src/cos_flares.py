@@ -224,19 +224,14 @@ class FlaresWithCOS(object):
         fuv130_err = np.zeros(len(self.time.value))
 
         for i in range(len(self.wavelength)):
-            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1197)) | #1198.49)) |
-                             #((self.wavelength[i] >= 1201.71) & (self.wavelength[i] <= 1212.16)) |
+            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1197)) | 
                              ((self.wavelength[i] >= 1230) & (self.wavelength[i] <= 1274.04)) |
-                             ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1355.49)) )[0]#1354.49)) |
-                             #((self.wavelength[i] >= 1356.71) & (self.wavelength[i] <= 1357.59)) |
-                             #((self.wavelength[i] >= 1359.51) & (self.wavelength[i] <= 1428.90)) )[0]
+                             ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1355.49)) )[0]
+                             
 
-            fuv130[i] = np.trapz(self.flux[i][mask],
-                                 x=self.wavelength[i][mask])
+            fuv130[i] = np.nansum(self.flux[i][mask])
             
             fuv130_err[i] = np.sqrt(np.nansum(self.flux_err[i][mask]**2) / len(mask))
-#            fuv130_err[i] = np.sqrt(np.trapz(self.flux_err[i][mask]**2,
-#                                          x=self.wavelength[i][mask])/len(self.flux[i][mask]))
 
         self.fuv130 = fuv130 * self.flux_units * units.AA
         self.fuv130_err = fuv130_err * self.flux_units * units.AA
@@ -320,10 +315,20 @@ class FlaresWithCOS(object):
         return sed
 
 
-    def fit_flare(self, ion, mask, amp=None, t0=None, decay=None, rise=None, x=None):
+    def fit_flare(self, ion, mask, model='Davenport', 
+                  amp=None, t0=None, decay=None, rise=None, 
+                  eta=None, omega=None, alpha=None,
+                  x=None, y=None, yerr=None):
         """
-        Fits a flare model (Davenport et al. 2016) to the data. It
-        takes as many flares as input.
+        Fits a flare model to the data. There are two model options available:
+        1. Flare model from Davenport et al. (2016) : Gaussian rise + exponential
+        decay. This model requires parameters: amp, t0, decay, rise.
+        2. Skewed Gaussian distribution (this work). This model requires 
+        parameters: eta, omega, alpha.
+        
+        This function can fit multi-peaked flare events. Do this by setting
+        the parameters to arrays of length N, where N is the number of flares
+        you wish to fit.
 
         Parameters
         ----------
@@ -332,6 +337,9 @@ class FlaresWithCOS(object):
         mask : np.array
            A mask that isolates the flare in question. Should be
            of length `self.time`.
+        model : str
+           Model type you wish to fit. Default is 'Davenport'. Additional
+           models include: 'skewed_gaussian'.
         amp : np.array, optional
            A first guess at the amplitude of each flare for the flare
            model. Should be of length `nflares`.
@@ -346,6 +354,16 @@ class FlaresWithCOS(object):
            A first guess at the decay scaling factor for each flare.
            Should be of length `nflares`. Default is None. If None,
            will populate an array of values = 0.1.
+        eta : np.array, optional               
+           A first guess at the peak time of the flare (i.e. the mean
+           of the distribution). Default is None. If None, will take the
+           time of maximum value in the flux array.                     
+        omega : np.array, optional                                      
+           The scale of the Gaussian distribution. Default is None. If
+           None, will scale to the maximum flux value in the array.   
+        alpha : np.array, optional                                
+           Skewness of the distribution. Default is None. If None, will
+           test skew values of alpha > 0.      
 
         Returns
         -------
@@ -361,38 +379,66 @@ class FlaresWithCOS(object):
         flux = np.array(self.width_table[ion][mask]) + 0.0
         flux_err = np.array(self.error_table[ion][mask]) /10.0 #+ 0.0
 
-        if x is not None:
+        if x is not None and y is None:
             finterp = interp1d(time, flux)
             flux = finterp(x)
             
             einterp = interp1d(time, flux_err)
             flux_err = einterp(x)
+            
+        if x is not None:
             time = x + 0.0
+        if y is not None:
+            flux = y + 0.0
+        if yerr is not None:
+            flux_err = yerr + 0.0 
 
-        fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
+        if model.lower() == 'davenport':
+            fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
+        elif model.lower() == 'skewed gaussian':
+            fmodel = Model(skewed_gaussian, prefix='f{0:02d}_'.format(0))
 
-        if len(amp) > 1:
-            for i in range(1, len(amp)):
-                fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
+        if type(amp)==np.ndarray or type(amp)==list:
+            if len(amp) > 1:
+                for i in range(1, len(amp)):
+                    fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
+
+        if type(eta) == np.ndarray or type(eta)==list:
+            if len(eta) > 1:
+                for i in range(1, len(eta)):
+                    fmodel += Model(skewed_gaussian, prefix='f{0:02d}_'.format(i))
 
         pars = fmodel.make_params()
         
-        for i in range(len(amp)):
-            pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
-            pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-60, max=t0[i]+60)
-            pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
-            pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
-            pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=1)
-            pars['f{0:02d}_offset_e'.format(i)].set(value=0, min=-1, max=1)
+        if model.lower() == 'davenport':
+            for i in range(len(amp)):
+                pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
+                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-60, max=t0[i]+60)
+                pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
+                pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
+                pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=10)
+                pars['f{0:02d}_offset_e'.format(i)].set(value=0, min=-1, max=10)
+
+        elif model.lower() == 'skewed gaussian':
+            for i in range(len(eta)):
+                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-100, max=eta[i]+100)
+                pars['f{0:02d}_{1}'.format(i, 'omega')].set(value=omega[i], min=0.1, max=500)
+                pars['f{0:02d}_{1}'.format(i, 'alpha')].set(value=alpha[i], min=0, max=200)
+                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
+                pars['f{0:02d}_{1}'.format(i, 'normalization')].set(value=1e-3, min=1e-7, max=1)
 
         init = fmodel.eval(pars, x=time)
+
         out  = fmodel.fit(flux,
                           pars, x=time,
                           weights=flux_err)
         
-        return time, flux, flux_err, out
+        return time, flux, flux_err, fmodel, out
         
-        
+
+    
+
+
     def load_lsf_model(self, fname):
         """
         Convolves the line spread function with a gaussian to
@@ -577,7 +623,8 @@ class FlaresWithCOS(object):
                           [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923], 
                           [1140.873, 1145.141], [1146.285, 1151.544], [1152.602, 1155.579], 
                           [1159.276, 1163.222], [1164.565, 1173.959], [1178.669, 1188.363], 
-                          [1195.162, 1196.864], [1201.748, 1203.862], [1227.056, 1236.921],
+                          [1195.162, 1196.864], 
+                          #[1201.748, 1203.862], [1227.056, 1236.921],
                           [1262.399, 1263.967], [1268.559, 1273.974], [1281.396, 1287.493], 
                           [1290.494, 1293.803], [1307.064, 1308.703], [1319.494, 1322.910], 
                           [1330.349, 1332.884], [1337.703, 1341.813], [1341.116, 1350.847] ])
