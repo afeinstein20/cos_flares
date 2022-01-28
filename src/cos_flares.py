@@ -315,9 +315,9 @@ class FlaresWithCOS(object):
         return sed
 
 
-    def fit_flare(self, ion, mask, model='Davenport', 
+    def fit_flare(self, ion, mask, model='white light', 
                   amp=None, t0=None, decay=None, rise=None, 
-                  eta=None, omega=None, alpha=None,
+                  eta=None, omega=None, alpha=None, offset=None,
                   x=None, y=None, yerr=None):
         """
         Fits a flare model to the data. There are two model options available:
@@ -338,8 +338,9 @@ class FlaresWithCOS(object):
            A mask that isolates the flare in question. Should be
            of length `self.time`.
         model : str
-           Model type you wish to fit. Default is 'Davenport'. Additional
-           models include: 'skewed_gaussian'.
+           Model type you wish to fit. Default is 'white light'. Additional
+           models include: 'skewed_gaussian' and 'convolved' (which is
+           a convolution of the other two models).
         amp : np.array, optional
            A first guess at the amplitude of each flare for the flare
            model. Should be of length `nflares`.
@@ -379,12 +380,12 @@ class FlaresWithCOS(object):
         flux = np.array(self.width_table[ion][mask]) + 0.0
         flux_err = np.array(self.error_table[ion][mask]) /10.0 #+ 0.0
 
-        if x is not None and y is None:
-            finterp = interp1d(time, flux)
-            flux = finterp(x)
+        #if x is not None and y is None:
+        #    finterp = interp1d(time, flux)
+        #    flux = finterp(x)
             
-            einterp = interp1d(time, flux_err)
-            flux_err = einterp(x)
+        #    einterp = interp1d(time, flux_err)
+        #    flux_err = einterp(x)
             
         if x is not None:
             time = x + 0.0
@@ -393,24 +394,25 @@ class FlaresWithCOS(object):
         if yerr is not None:
             flux_err = yerr + 0.0 
 
-        if model.lower() == 'davenport':
+        if offset is None:
+            if model.lower() == 'white light':
+                offset = np.full(len(amp), 0)
+            else:
+                offset = np.full(len(eta), 0)
+        
+        ##########
+        ### WHITE LIGHT MODEL ###
+        ##########
+        if model.lower() == 'white light':
+            
             fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
-        elif model.lower() == 'skewed gaussian':
-            fmodel = Model(skewed_gaussian, prefix='f{0:02d}_'.format(0))
 
-        if type(amp)==np.ndarray or type(amp)==list:
             if len(amp) > 1:
                 for i in range(1, len(amp)):
                     fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
 
-        if type(eta) == np.ndarray or type(eta)==list:
-            if len(eta) > 1:
-                for i in range(1, len(eta)):
-                    fmodel += Model(skewed_gaussian, prefix='f{0:02d}_'.format(i))
+            pars = fmodel.make_params()
 
-        pars = fmodel.make_params()
-        
-        if model.lower() == 'davenport':
             for i in range(len(amp)):
                 pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
                 pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-60, max=t0[i]+60)
@@ -418,22 +420,66 @@ class FlaresWithCOS(object):
                 pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
                 pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=10)
                 pars['f{0:02d}_offset_e'.format(i)].set(value=0, min=-1, max=10)
-
+          
+        ##########
+        ### SKEWED GAUSSIAN MODEL ###
+        ##########
         elif model.lower() == 'skewed gaussian':
+            fmodel = Model(skewed_gaussian, prefix='f{0:02d}_'.format(0))
+            
+            if len(eta) > 1:
+                for i in range(1, len(eta)):
+                    fmodel += Model(skewed_gaussian, prefix='f{0:02d}_'.format(i))          
+
+            pars = fmodel.make_params()
+
             for i in range(len(eta)):
                 pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-100, max=eta[i]+100)
                 pars['f{0:02d}_{1}'.format(i, 'omega')].set(value=omega[i], min=0.1, max=500)
                 pars['f{0:02d}_{1}'.format(i, 'alpha')].set(value=alpha[i], min=0, max=200)
-                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
                 pars['f{0:02d}_{1}'.format(i, 'normalization')].set(value=1e-3, min=1e-7, max=1)
+                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
+
+
+        ##########
+        ### CONVOLVED MODELL ###
+        ##########
+        elif model.lower() == 'convolved':
+
+            fmodel = Model(convolved_model, prefix='f{0:02d}_'.format(0))
+
+            if len(eta) > 1:
+                for i in range(1, len(eta)):
+                    fmodel += Model(convolved_model, prefix='f{0:02d}_'.format(i))
+            
+            pars = fmodel.make_params()
+
+            for i in range(len(eta)):
+                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-100, max=eta[i]+100)
+                pars['f{0:02d}_{1}'.format(i, 'omega')].set(value=omega[i], min=1, max=750)
+                pars['f{0:02d}_{1}'.format(i, 'alpha')].set(value=alpha[i], min=0, max=200)
+                pars['f{0:02d}_{1}'.format(i, 'normalization')].set(value=1, min=0.9, max=1.1)
+
+                pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
+                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=np.nanmin(time), max=np.nanmax(time))
+                pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
+                pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
+                
+                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
+
+
+        else:
+            print('The input model is not implemented.')
+            print('Available models: white light, skewed gaussian, convolved')
+            return
+
 
         init = fmodel.eval(pars, x=time)
 
         out  = fmodel.fit(flux,
-                          pars, x=time,
-                          weights=flux_err)
+                          pars, x=time)
         
-        return time, flux, flux_err, fmodel, out
+        return time, flux, flux_err, fmodel, init, out
         
 
     

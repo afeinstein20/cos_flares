@@ -7,7 +7,7 @@ from astropy import units, constants
 __all__ = ['load_data', 'load_binned_data', 'load_table', 
            'blackbody', 'load_inferno', 'build_lmfit',
            'flare_model', 'gaussian', 'skewed_gaussian',
-           'multi_peaks']
+           'multi_peaks', 'convolved_model']
 
 
 def load_data(fname='/Users/arcticfox/Documents/AUMic/reduced/data.npy'):
@@ -65,6 +65,16 @@ def skewed_gaussian(x, eta, omega, alpha, offset, normalization):
     Psi = 0.5 * (1 + erf(t / np.sqrt(2)))
     psi = 2.0 / (omega * np.sqrt(2 * np.pi)) * np.exp(- (x-eta)**2 / (2.0 * omega**2))
     return (psi * Psi)/normalization + offset
+
+def convolved_model(x, eta, omega, alpha, normalization,
+                    amp, t0, rise, decay, offset):
+    """ Fits the flares with a convolution of the skewed Gaussian and
+        traditional white-light Davenport flare model. """
+    m1 = skewed_gaussian(x, eta, omega, alpha, 0, normalization)
+    m2 = flare_model(x, amp, t0, rise, decay, offset_g=0, offset_e=0)
+
+    return np.convolve(m1, m2, mode='same') + offset
+
 
 def build_lmfit(x, lsf, params, std=0):
     """
