@@ -147,6 +147,7 @@ class ChiantiSetup(object):
             if line == 'EUV': continue
 
             CHIname = self.create_chiname(line)
+            self.linelist[line]['CHIname'] = CHIname
 
             G_T[CHIname] = {}
             try:
@@ -223,3 +224,56 @@ class ChiantiSetup(object):
                 except(AttributeError): continue
                 
         return
+
+
+class DEMModeling(object):
+    """
+    Does all the DEM modeling routines.
+    """
+
+    def __init__(self, linelist):
+        """
+        Initializes the class.
+
+        Parameters
+        ----------
+        linelist : dictionary
+        """
+        self.linelist
+
+
+    def fit_DEM(self, peakFormT, DEM, DEMerr):
+        """
+        Fits the DEM using a Chebyshev polynomial.
+        """
+        
+        def lnlike(p):
+            c_n = p[:5]
+            s = 10**(p[-1])
+            cheb = np.polynomial.chebyshev.Chebyshev(c_n, domain=[4, 8])
+        #ensure that the first derivative at log10(T) = 4 the derivative is negative
+            if cheb.deriv(m=1)(4) > 0: 
+                return -np.inf
+            if cheb.deriv(m=1)(8) > 0: 
+                return -np.inf
+        #ensure that the base-10 log of the polynomial is positive log10(6) to prevent really small DEMs
+            if cheb(6) < 0: 
+                return -np.inf
+            modelDEM = np.array(cheb(peakFormT))
+            
+            logl = np.log(1 / np.sqrt(2*np.pi*(DEMerr**2 + (s * modelDEM)**2))) - ((DEM - modelDEM)/(2*np.sqrt(DEMerr**2 + (s * modelDEM)**2)))**2
+            return np.sum(logl)
+
+        def ptform(p):
+            xcopy = np.array(p)
+            c0 = xcopy[0] * 6 + 20            # sample c0, which sets the mean location of DEM, on U[20, 26]
+            c1_5 = xcopy[1:5] * 20 + (-10)        # sample c1 through c5 on U[-10, 10] (can increase this)  
+            s = np.log10(xcopy[-1]) * 4 + -2     # sample log10(s) on U[-2, 2]               
+            xnew = np.hstack([c0, c1_5, s])
+            return xnew
+        
+        ndim = 6
+        dsampler = DynamicNestedSampler(lnlike, ptform, ndim)
+        dsampler.run_nested(wt_kwargs={'pfrac': 1.0})
+
+        return dsampler.results
