@@ -136,7 +136,6 @@ class ChiantiSetup(object):
            Array temperature ranges used to create the emissivity
            functions.
         """
-
         G_T = {}
         tempRangeLines = np.logspace(self.logT_range[0], self.logT_range[1], 100)
 
@@ -248,7 +247,9 @@ class DEMModeling(object):
         self.logT_range = logT_range
 
 
-    def create_DEM(self, specified_lines=[], resample=False, quick_plot=False):
+    def create_DEM(self, specified_lines=[], resample=False, 
+                   nsamples=5000, quick_plot=False,
+                   grid_filename='DEMgrid'):
         """
         Calculates the differential emission measurements (DEMs). This function
         requires that the linelist dictionary has all transitions separated.
@@ -259,15 +260,139 @@ class DEMModeling(object):
            Default is None.
         resample : bool, optional
            Default is False.
+        nsamples : int, optional
+           Number of resamples to create. Default is 5000.
         quick_plot : bool, optional
            A quick look at the DEM fitting. Default is False.
-
-        Attributes
-        ----------
+        grid_filename : str, optional
+           The filename prefix for the `.npy` file with the
+           DEMgrid outputs. Default is `DEMgrid`.
         """
+        
+        lines = np.deepcopy(self.linelist)
+
+        if len(specified_lines) == 0:
+            specified_lines = list(lines.keys())
 
 
-        return
+        peakFormTemps, avgDEMs, avgDEMErrs, weights = [], [], [], []
+        for line in lines.keys():
+
+            if line not in specified_lines:
+                lines[line]['DEMEstimate'] = False
+                continue
+            else: 
+                lines[line]['DEMEstimate'] = True
+
+            I_ul = 10**lines[line]['log10SFline'] / np.pi  #[erg/cm^2/s/sr]  surface flux                                                                  
+            I_ulErr = lines[line]['log10SFlineErr'] * I_ul * np.log(10) / np.pi   #[erg/cm^2/s/sr]  surface flux error                                     
+            lines[line]['I_ul'] = I_ul
+            lines[line]['I_ulErr'] = I_ulErr
+            lines[line]['peakFormTemp'] = []
+            lines[line]['integratedGT'] = []
+            lines[line]['avgDEM'] = []
+            lines[line]['avgDEMErr'] = []
+
+            for i, w in enumerate(lines[line]['centers']):
+                peakInd = np.argwhere(G_T[lines[line]['CHIname']][w] == G_T[lines[line]['CHIname']][w].max())[0]
+                lines[line]['peakFormTemp'].append(G_T['lineTemp'][peakInd])
+                
+                integratedGT = sci.integrate.simps(G_T[lines[line]['CHIname']][w], G_T['lineTemp'])
+                lines[line]['integratedGT'].append(integratedGT)
+                
+                avgDEM = lines[line]['I_ul'][i]/integratedGT
+                avgDEMErr = lines[line]['I_ulErr'][i]/integratedGT
+                lines[line]['avgDEM'].append(avgDEM)
+                lines[line]['avgDEMErr'].append(avgDEMErr)
+                
+                peakFormTemps.append(np.log10(lines[line]['peakFormTemp'][i]))
+                avgDEMs.append(np.log10(lines[line]['avgDEM'][i]))
+                avgDEMErrs.append(avgDEMErr / (avgDEM * np.log(10)))
+                
+                weights.append(10**(lines[line]['log10SFlineErr'][i]))
+                print(line, i, w, 10**(lines[line]['log10SFlineErr'][i]))
+
+
+        peakFormTemps = np.hstack(peakFormTemps)
+        avgDEMs = np.hstack(avgDEMs)
+        avgDEMErrs = np.hstack(avgDEMErrs)
+        
+        DEMarray = np.array([peakFormTemps, avgDEMs, weights]).T
+        DEMarray = DEMarray[DEMarray[:,0].argsort()].T
+
+        samples = results.samples
+        quantiles = [dyfunc.quantile(samps, [.16, .5, .84], weights=np.exp(results['logwt']-results['logwt'][-1])) for samps in samples.T]
+        params = np.array(list(map(lambda v: (v[0], v[1], v[2]), quantiles)))
+        values = params[:,1]
+        values_lo = params[:,0]
+        values_hi = params[:,2]
+        
+        tempRangeLines = self.G_T['lineTemp']
+        T = np.log10(tempRangeLines)
+
+        ## PRETTY SURE RIGHT NOW THIS DOESN'T HANDLE NO RESAMPLING ##
+        if resample:
+            DEMgrid = self.dem_resample(nsamples)
+            np.save('{0}.npy'.format(grid_filename), DEMgrid)
+        else:
+            try:
+                DEMgrid = np.load('{0}.npy'.format(grid_filename), allow_pickle=True)
+            except FileNotFoundError:
+                DEMgrid = self.dem_resample(nsamples)
+                np.save('{0}.npy'.format(grid_filename), DEMgrid)
+
+
+        DEM = np.percentile(DEMgrid, 50, axis=0)
+        DEMlo = np.percentile(DEMgrid, 16, axis=0)
+        DEMhi = np.percentile(DEMgrid, 84, axis=0)
+
+        if quick_plot:
+            for dg in DEMgrid:
+                plt.plot(T, dg, color='k', lw=1, alpha=0.01)
+            plt.plot(T, DEM, color='darkread', alpha=0.4)
+            plt.plot(T, DEMlo, color='deepskyblue', alpha=0.4)
+            plt.plot(T, DEMhi, color='deepskyblue', alpha=0.4)
+            
+            plt.xlabel('Temperature [K]')
+            plt.ylabel('DEM [cm$^{-5}$ K$^{-1}$]')
+            plt.ylim(18,27)
+            plt.xlim(4,8)
+            plt.show()
+
+        if 'EUV' not in lines.keys(): 
+            lines['EUV'] = {}
+        if 'DEMUV' not in lines['EUV'].keys(): 
+            lines['EUV']['DEMUV'] = {}
+
+        lines['EUV']['DEMUV']['Chebyshev'] = {}
+        lines['EUV']['DEMUV']['Chebyshev']['Trange'] = np.log10(tempRangeLines)
+        lines['EUV']['DEMUV']['Chebyshev']['Fit'] = [DEMlo, DEM, DEMhi]
+
+        self.linelist = lines
+
+
+    def dem_resample(self, nsamples):
+        """
+        Creates the DEM grid output with resampling.
+
+        Parameters
+        ----------
+        nsamples : int, optional
+           The number of samples for the resampling
+           routine.
+        """
+        wgts = np.exp(results['logwt']-results['logwt'][-1])
+        DEMgrid = np.zeros((nsamples, len(T)))
+
+        for i, c in enumerate(np.random.choice(len(wgts), nsamples, replace=False, p=wgts/np.sum(wgts))):
+            params = samples.T[:, c]
+            c_n = params[0:5]
+            cheb = np.polynomial.chebyshev.Chebyshev(c_n, domain=[self.logT_range[0], 
+                                                                  self.logT_range[1]])
+            modelDEM = np.array(cheb(T))
+            DEMgrid[i] += modelDEM
+
+        return DEMgrid
 
 
     def fit_DEM(self, peakFormT, DEM, DEMerr):
