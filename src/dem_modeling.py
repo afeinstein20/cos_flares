@@ -228,16 +228,46 @@ class DEMModeling(object):
     Does all the DEM modeling routines.
     """
 
-    def __init__(self, linelist, G_T):
+    def __init__(self, linelist, G_T, logT_range):
         """
         Initializes the class.
 
         Parameters
         ----------
         linelist : dictionary
+        G_T : dictionary
+           Dictionary of emissivity functions for each ion.
+        logT_range : list
+           An array or list of beginning and ending log(temperatures)
+           to run the Chianti function over. Should be a list/array
+           of length = 2. Should be the same as what was input in
+           `ChiantiSetup`.
         """
         self.linelist = linelist
         self.G_T = G_T
+        self.logT_range = logT_range
+
+
+    def create_DEM(self, specified_lines=[], resample=False, quick_plot=False):
+        """
+        Calculates the differential emission measurements (DEMs). This function
+        requires that the linelist dictionary has all transitions separated.
+
+        Parameters
+        ----------
+        specified_lines : list, optional
+           Default is None.
+        resample : bool, optional
+           Default is False.
+        quick_plot : bool, optional
+           A quick look at the DEM fitting. Default is False.
+
+        Attributes
+        ----------
+        """
+
+
+        return
 
 
     def fit_DEM(self, peakFormT, DEM, DEMerr):
