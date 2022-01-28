@@ -15,6 +15,7 @@ from dynesty.plotting import _quantile
 from scipy.interpolate import interp1d
 from dynesty import DynamicNestedSampler
 
+
 __all__ = ['ChiantiSetup', 'DEMModeling']
 
 
@@ -57,7 +58,6 @@ class ChiantiSetup(object):
 
         print("Setting up Chianti spectrum. This may take a few minutes . . .")
         self.library_setup()
-#        self.emissivity_functions()
 
 
     def library_setup(self):
@@ -169,7 +169,7 @@ class ChiantiSetup(object):
                     
                     G_T[CHIname][w] = ChiantiIon.Intensity['intensity'][:,idx]
             except:
-                print(line)
+                print("Couldn't get: ", line)
         G_T['ionTemp'] = tempRangeLines
         self.G_T = G_T
 
@@ -213,9 +213,6 @@ class ChiantiSetup(object):
             except(KeyError): continue
             
             for w in wvls:
-                #if w in self.G_T[ion].keys():
-                #    print('already have {} in {} G(T)'.format(w, ion))
-                #    continue
                 dist = np.abs(np.asarray(ChiantiIon.Intensity['wvl']) - w)
                 idx = np.argmin(dist)
                 try:
@@ -231,7 +228,7 @@ class DEMModeling(object):
     Does all the DEM modeling routines.
     """
 
-    def __init__(self, linelist):
+    def __init__(self, linelist, G_T):
         """
         Initializes the class.
 
@@ -239,7 +236,8 @@ class DEMModeling(object):
         ----------
         linelist : dictionary
         """
-        self.linelist
+        self.linelist = linelist
+        self.G_T = G_T
 
 
     def fit_DEM(self, peakFormT, DEM, DEMerr):
@@ -277,3 +275,58 @@ class DEMModeling(object):
         dsampler.run_nested(wt_kwargs={'pfrac': 1.0})
 
         return dsampler.results
+
+    def estimate_EUV_from_DEM(self):
+        """
+        Estimates the EUV flux from the DEM models.
+
+        Attributes
+        ----------
+        dem_ions_lo : dictionary
+           Lower error to the EUV calculated per ion.
+        dem_ions : dictionary
+           Median of the EUV calculated per ion.
+        dem_ions_hi : dictionary
+           Upper error to the EUV calculated per ion.
+        """        
+        
+        DEM_function_Trange = 10**self.linelist['EUV']['DEMUV']['Chebyshev']['Trange']
+
+        for i in range(3):
+            localdict = {}
+            
+            DEM_function = 10**self.linelist['EUV']['DEMUV']['Chebyshev']['Fit'][i]
+
+            for ion in self.G_T.keys():
+                if ion=='lineTemp': continue
+                if ion=='ionTemp': continue
+                for c, center in enumerate(self.G_T[ion].keys()):
+
+                    if self.G_T[ion][center].shape == self.G_T['ionTemp'].shape: 
+                        ionTrange = G_T['ionTemp']
+                    elif self.G_T[ion][center].shape == self.G_T['lineTemp'].shape:
+                        ionTrange = self.G_T['lineTemp']
+
+                    G_T_interp = np.interp(DEM_function_Trange, ionTrange, self.G_T[ion][center])
+                    integrand = G_T_interp * DEM_function
+                    I_ul = sci.integrate.simps(integrand, DEM_function_Trange)
+                    
+                    if ion not in localdict.keys():
+                        localdict[ion] = {}
+                        localdict[ion]['centers'] = []
+                        localdict[ion]['log10SFline'] = []
+                        localdict[ion]['centers'].append(center)
+                        localdict[ion]['log10SFline'].append(np.log10(I_ul*np.pi))
+                    else:
+                        localdict[ion]['centers'].append(center)
+                        localdict[ion]['log10SFline'].append(np.log10(I_ul*np.pi))
+
+            if i==0:
+                self.linelist['EUV']['DEMUV']['ions_lo'] = localdict
+                self.dem_ions_lo = localdict
+            elif i==1:
+                self.linelist['EUV']['DEMUV']['ions'] = localdict
+                self.dem_ions = localdict
+            elif i==2:
+                self.linelist['EUV']['DEMUV']['ions_hi'] = localdict
+                self.dem_ions_hi = localdict
