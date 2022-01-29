@@ -249,6 +249,7 @@ class DEMModeling(object):
 
     def create_DEM(self, specified_lines=[], resample=False, 
                    nsamples=5000, quick_plot=False,
+                   results_filename='DEMresults',
                    grid_filename='DEMgrid'):
         """
         Calculates the differential emission measurements (DEMs). This function
@@ -264,12 +265,26 @@ class DEMModeling(object):
            Number of resamples to create. Default is 5000.
         quick_plot : bool, optional
            A quick look at the DEM fitting. Default is False.
+        results_filename : str, optional
+           The filename prefix for the `.pkl` file with the
+           DEM fitted results. Default is `DEMresults`.
         grid_filename : str, optional
-           The filename prefix for the `.npy` file with the
+           The filename prefix for the `.pkl` file with the
            DEMgrid outputs. Default is `DEMgrid`.
+
+        Attributes
+        ----------
+        T : np.array
+           Temperature array for the DEM
+        DEM : np.array
+           Median DEM fit.
+        DEM_low : np.array
+           Lower estimate to the DEM fit.
+        DEM_upp : np.array
+           Upper estimate to the DEM fit.
         """
         
-        lines = np.deepcopy(self.linelist)
+        lines = self.linelist
 
         if len(specified_lines) == 0:
             specified_lines = list(lines.keys())
@@ -294,10 +309,10 @@ class DEMModeling(object):
             lines[line]['avgDEMErr'] = []
 
             for i, w in enumerate(lines[line]['centers']):
-                peakInd = np.argwhere(G_T[lines[line]['CHIname']][w] == G_T[lines[line]['CHIname']][w].max())[0]
-                lines[line]['peakFormTemp'].append(G_T['lineTemp'][peakInd])
+                peakInd = np.argwhere(self.G_T[lines[line]['CHIname']][w] == self.G_T[lines[line]['CHIname']][w].max())[0]
+                lines[line]['peakFormTemp'].append(self.G_T['lineTemp'][peakInd])
                 
-                integratedGT = sci.integrate.simps(G_T[lines[line]['CHIname']][w], G_T['lineTemp'])
+                integratedGT = sci.integrate.simps(self.G_T[lines[line]['CHIname']][w], self.G_T['lineTemp'])
                 lines[line]['integratedGT'].append(integratedGT)
                 
                 avgDEM = lines[line]['I_ul'][i]/integratedGT
@@ -320,6 +335,17 @@ class DEMModeling(object):
         DEMarray = np.array([peakFormTemps, avgDEMs, weights]).T
         DEMarray = DEMarray[DEMarray[:,0].argsort()].T
 
+        ## PRETTY SURE RIGHT NOW THIS DOESN'T HANDLE NO RESAMPLING ## 
+        if resample:
+            results = self.fit_DEM(peakFormTemps, avgDEMs, avgDEMErrs)
+            pickle.dump(results, open('{}.pkl'.format(results_filename), 'wb'))
+        else:
+            try: 
+                results = pickle.load(open('{}.pkl'.format(results_filename), 'rb'))
+            except FileNotFoundError :
+                results = self.fit_DEM(peakFormTemps, avgDEMs, avgDEMErrs)
+                pickle.dump(results, open('{}.pkl'.format(results_filename), 'wb'))
+
         samples = results.samples
         quantiles = [dyfunc.quantile(samps, [.16, .5, .84], weights=np.exp(results['logwt']-results['logwt'][-1])) for samps in samples.T]
         params = np.array(list(map(lambda v: (v[0], v[1], v[2]), quantiles)))
@@ -332,14 +358,14 @@ class DEMModeling(object):
 
         ## PRETTY SURE RIGHT NOW THIS DOESN'T HANDLE NO RESAMPLING ##
         if resample:
-            DEMgrid = self.dem_resample(nsamples)
-            np.save('{0}.npy'.format(grid_filename), DEMgrid)
+            DEMgrid = self.dem_resample(nsamples, results, T, samples)
+            pickle.dump(DEMgrid, open('{}.pkl'.format(grid_filename), 'wb'))
         else:
             try:
-                DEMgrid = np.load('{0}.npy'.format(grid_filename), allow_pickle=True)
+                DEMgrid = pickle.load(open('{}.pkl'.format(grid_filename), 'rb'))
             except FileNotFoundError:
-                DEMgrid = self.dem_resample(nsamples)
-                np.save('{0}.npy'.format(grid_filename), DEMgrid)
+                DEMgrid = self.dem_resample(nsamples, results, T, samples)
+                pickle.dump(DEMgrid, open('{}.pkl'.format(grid_filename), 'wb'))
 
 
         DEM = np.percentile(DEMgrid, 50, axis=0)
@@ -349,9 +375,9 @@ class DEMModeling(object):
         if quick_plot:
             for dg in DEMgrid:
                 plt.plot(T, dg, color='k', lw=1, alpha=0.01)
-            plt.plot(T, DEM, color='darkread', alpha=0.4)
-            plt.plot(T, DEMlo, color='deepskyblue', alpha=0.4)
-            plt.plot(T, DEMhi, color='deepskyblue', alpha=0.4)
+            plt.plot(T, DEM, color='darkred', alpha=0.8, lw=3)
+            plt.plot(T, DEMlo, color='deepskyblue', alpha=0.8, lw=3)
+            plt.plot(T, DEMhi, color='deepskyblue', alpha=0.8, lw=3)
             
             plt.xlabel('Temperature [K]')
             plt.ylabel('DEM [cm$^{-5}$ K$^{-1}$]')
@@ -369,9 +395,14 @@ class DEMModeling(object):
         lines['EUV']['DEMUV']['Chebyshev']['Fit'] = [DEMlo, DEM, DEMhi]
 
         self.linelist = lines
+        self.T = T
+        self.DEM = DEM
+        self.DEM_low = DEMlo
+        self.DEM_upp = DEMhi
+        
+        
 
-
-    def dem_resample(self, nsamples):
+    def dem_resample(self, nsamples, results, T, samples):
         """
         Creates the DEM grid output with resampling.
 
@@ -458,7 +489,7 @@ class DEMModeling(object):
                 for c, center in enumerate(self.G_T[ion].keys()):
 
                     if self.G_T[ion][center].shape == self.G_T['ionTemp'].shape: 
-                        ionTrange = G_T['ionTemp']
+                        ionTrange = self.G_T['ionTemp']
                     elif self.G_T[ion][center].shape == self.G_T['lineTemp'].shape:
                         ionTrange = self.G_T['lineTemp']
 
