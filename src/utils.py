@@ -1,11 +1,13 @@
 import numpy as np
+from scipy.special import erf
 from lmfit.models import Model
 from astropy.table import Table
 from astropy import units, constants
 
 __all__ = ['load_data', 'load_binned_data', 'load_table', 
            'blackbody', 'load_inferno', 'build_lmfit',
-           'flare_model', 'gaussian']
+           'flare_model', 'gaussian', 'skewed_gaussian',
+           'multi_peaks', 'convolved_model']
 
 
 def load_data(fname='/Users/arcticfox/Documents/AUMic/reduced/data.npy'):
@@ -47,12 +49,33 @@ def blackbody(wavelength, T):
     e = (constants.h*constants.c)/(wavelength*constants.k_B*T)
     return frac * 1/(np.exp(e)-1)
 
-def gaussian(x, mu, std, f, lsf):
+def gaussian(x, mu, std, f):#, lsf):
     """ A gaussian model. """
     exp = -0.5 * (x-mu)**2 / std**2
     denom = std * np.sqrt(np.pi * 2.0)
     g = f / denom * np.exp(exp)
-    return np.convolve(lsf, g, 'same')
+    return g
+#    return np.convolve(lsf, g, 'same')
+
+def skewed_gaussian(x, eta, omega, alpha, offset, normalization):
+    """ A skewed gaussian model.  """
+    # alpha = skew (alpha > 0, skewed right; alpha < 0, skewed left)
+    # omega = scale
+    # eta = mean
+    t = alpha * (x - eta) / omega
+    Psi = 0.5 * (1 + erf(t / np.sqrt(2)))
+    psi = 2.0 / (omega * np.sqrt(2 * np.pi)) * np.exp(- (x-eta)**2 / (2.0 * omega**2))
+    return (psi * Psi)/normalization + offset
+
+def convolved_model(x, eta, omega, alpha, normalization,
+                    amp, t0, rise, decay, offset):
+    """ Fits the flares with a convolution of the skewed Gaussian and
+        traditional white-light Davenport flare model. """
+    m1 = skewed_gaussian(x, eta, omega, alpha, 0, normalization)
+    m2 = flare_model(x, amp, t0, rise, decay, offset_g=0, offset_e=0)
+
+    return np.convolve(m1, m2, mode='same') + offset
+
 
 def build_lmfit(x, lsf, params, std=0):
     """
@@ -170,3 +193,33 @@ def build_lmfit_flare(x, params, std=0):
 
     init = fmodel.eval(pars, x=x)
     return init
+
+def multi_peaks(ttest, test):
+    """
+    Used to identify multiple peaks in the same flare.
+
+    test = time
+    ttest = flux
+    """
+
+    p1 = np.argmax(test)
+    
+    try:
+        arg = np.where((ttest.value>ttest[p1].value+100))[0]
+        p2 = np.argmax(test[arg])
+    except:
+        arg=np.arange(0,len(ttest),1,dtype=int)
+        p2=0
+        
+    try:
+        arg3 = np.where((ttest.value>ttest[arg][p2].value+100))[0]
+        p3 = np.argmax(test[arg3])
+
+    except:
+        arg3=np.arange(0,len(ttest),1,dtype=int)
+        p3=0
+        
+    t0 = np.array([ttest[p1].value, ttest[arg][p2].value, ttest[arg3][p3].value])
+    amp = np.array([test[p1], test[arg][p2], test[arg3][p3]])#/1e-13
+
+    return t0, amp
