@@ -21,7 +21,7 @@ from specutils.analysis import line_flux, equivalent_width
 from astropy.nddata import StdDevUncertainty, NDUncertainty
 
 
-__all__ = ['setup_linelist', 'ChiantiSetup', 'DEMModeling']
+__all__ = ['init_dict', 'setup_linelist', 'ChiantiSetup', 'DEMModeling']
 
 
 def init_dict(ions):
@@ -458,8 +458,9 @@ class DEMModeling(object):
             else: 
                 lines[line]['DEMEstimate'] = True
 
-            I_ul = 10**lines[line]['log10SFline'] / np.pi  #[erg/cm^2/s/sr]  surface flux                                                                  
-            I_ulErr = lines[line]['log10SFlineErr'] * I_ul * np.log(10) / np.pi   #[erg/cm^2/s/sr]  surface flux error                                     
+            I_ul = 10**lines[line]['log10SFline'] / np.pi  #[erg/cm^2/s/sr]  surface flux
+            I_ulErr = lines[line]['log10SFlineErr'] * I_ul * np.log(10) / np.pi   #[erg/cm^2/s/sr]  surface flux error
+
             lines[line]['I_ul'] = I_ul
             lines[line]['I_ulErr'] = I_ulErr
             lines[line]['peakFormTemp'] = []
