@@ -4,7 +4,7 @@ import numpy as np
 import scipy as sci
 from tqdm import tqdm
 import matplotlib as mpl
-import astropy.units as u
+from astropy import units
 import ChiantiPy.core as ch
 from astropy.io import ascii
 import matplotlib.pyplot as plt
@@ -15,11 +15,58 @@ from dynesty.plotting import _quantile
 from scipy.interpolate import interp1d
 from dynesty import DynamicNestedSampler
 
+from lmfit.models import Model
+from specutils import Spectrum1D, SpectralRegion
+from specutils.analysis import line_flux, equivalent_width
+from astropy.nddata import StdDevUncertainty, NDUncertainty
+
 
 __all__ = ['setup_linelist', 'ChiantiSetup', 'DEMModeling']
 
 
-def setup_linelist(wavelength, flux, flux_err, line_table):
+def init_dict(ions):
+    """
+    Populates the linelist dictionary with subdictionaries
+    and lists as appropriate.
+
+    Parameters
+    ----------
+    ions : list, np.ndarray
+       List of ion keys to use.
+    
+    Returns
+    -------
+    linelist : dictionary
+       The beginning of the linelist dictionary.
+    """
+    subkeys = ['centers', 'lineX', 'lineY', 'lineYerr',
+               'lineFit', 'amp', 'ampErr', 'fittedCenter',
+               'sig', 'sigErr', 'Fline', 'Ffit', 'FlineErr', 
+               'FlineErr', 'FfitErr', 'EW', 'log10SFline',
+               'log10SFlineErr']
+
+    all_keys = np.zeros(len(ions), dtype='U32')
+    for i in range(len(line_table)):
+        if ' ' in ions[i]:
+            all_keys[i] = ions[i].replace(' ', '') # Removes spaces if necessary
+        else:
+            all_keys[i] = ions[i]
+    all_keys = np.unique(all_keys) # Populates for unique ions only
+
+    linelist = {}
+
+    for i in range(len(all_keys)):
+        linelist[all_keys[i]] = {}
+    
+        for s in range(len(subkeys)):
+            linelist[all_keys[i]][subkeys[s]] = []
+
+    return linelist
+
+
+def setup_linelist(wavelength, flux, flux_err, line_table,
+                   distance, distanceErr, radius, radiusErr, scaling=1e-14,
+                   flux_units=units.erg/units.s/units.cm**2/units.AA):
     """
     Creates the dictionary format needed to run the DEM modeling.
 
@@ -36,10 +83,97 @@ def setup_linelist(wavelength, flux, flux_err, line_table):
        should include the line name and center wavelength at 
        a minimum. Could also include `vmin` and `vmax`, or 
        the range to include in each feature.
+    distance : float, astropy.units.Unit
+       Distance to the star. Given in cm or with astropy units.
+    distanceErr : float, astropy.units.Unit
+       Error on the distance. Given in cm or with astropy units.   
+    radius : float, astropy.units.Unit
+       Radius of the star. Given in cm or with astropy units.
+    radiusErr : float, astropy.units.Unit
+       Error on the radius. Given in cm or with astropy units.
+    scaling : float, optional
+       Used to scale the spectrum for line-fitting purposes.
+       Default is 1e-14.
+    flux_units : astropy.units.Unit, optional
+       The flux units of the spectrum. Default is erg/s/cm^2/AA.
     """
-    linelist = {}
+    linelist = init_dict(line_table['Ion'])
 
+    for i in range(len(line_table)):
 
+        if line_table['quality'][i] == 0: # quality control on lines
+            
+            if ' ' in line_table['Ion'][i]:
+                main_key = line_table['Ion'][i].replace(' ', '')
+            else:
+                main_key = line_table['Ion'][i]
+
+            # gets the appropriate wavelength region
+            q = ( (wavelength >= line_table['wmin'][i]) &
+                  (wavelength <= line_table['wmax'][i]) )
+
+            # Fits a Gaussian profile to the line
+            gmodel = Model(gaussian, prefix='g_')
+            pars = gmodel.make_params()
+            pars['g_mu'].set(value=line_table['wave_obs'][i], 
+                             min=wavelength[q][5],
+                             max=wavelength[q][-5])
+            pars['g_std'].set(value=0.1, min=0.01, max=20)
+            pars['g_f'].set(value=0.5, min=0.01, max=40)
+            init = gmodel.eval(pars, x=wavelength[q])
+            out  = gmodel.fit(flux[q]/scaling, 
+                              pars,
+                              x=wavelength[q])
+            mini = out.minimize(max_nfev=2000)
+
+            # Gets errors on the amplitude
+            upp = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                           mini.params['g_f'].value+mini.params['g_f'].stderr)
+            low = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                           mini.params['g_f'].value-mini.params['g_f'].stderr)
+            amp_std = np.nanmedian([np.nanmax(upp)-np.nanmax(out.best_fit),
+                                    np.nanmax(out.best_fit)-np.nanmax(low)])
+
+            # Sets up Spectrum1D objects for measuring line fluxes
+            #    Spectrum1D object for the data
+            s1d = Spectrum1D(spectral_axis=wavelength[q]*units.AA, 
+                             flux=flux[q]*flux_units,
+                             uncertainty=StdDevUncertainty(flux_err[q]*flux_units))
+            #    Spectrum1D object for the best fit
+            s2d = Spectrum1D(spectral_axis=wavelength[q]*units.AA, 
+                             flux=out.best_fit*scaling*flux_units,
+                             uncertainty=StdDevUncertainty(flux_err[q]*flux_units))
+
+            if main_key in list(linelist.keys()): # double checks the line is in the dict
+                linelist[main_key]['centers'].append(line_table['wave_obs'][i])          # center wavelength
+                
+                linelist[main_key]['lineX'].append(wavelength[q])                        # wavelength array
+                linelist[main_key]['lineY'].append(flux[q])                              # flux array
+                linelist[main_key]['lineYerr'].append(flux_err[q])                       # flux error array
+                
+                linelist[main_key]['lineFit'].append(out.best_fit*scaling)               # best-fit Gaussian
+                linelist[main_key]['amp'].append(np.nanmax(out.best_fit)*scaling)        # amplitude of the fit
+                linelist[main_key]['ampErr'].append(amp_std*scaling)                     # error on the amp fit
+                linelist[main_key]['fittedCenter'].append(mini.params['g_mu'].value)     # fitted line center
+                linelist[main_key]['sig'].append(mini.params['g_std'].value)             # std of the Gaussian
+                linelist[main_key]['sigErr'].append(mini.params['g_std'].stderr)         # error on the std
+                
+                linelist[main_key]['Fline'].append(line_flux(s1d).value)                 # line flux of data
+                linelist[main_key]['Ffit'].append(line_flux(s2d).value)                  # line flux of model
+                linelist[main_key]['FlineErr'].append(line_flux(s1d).uncertainty.value)  # error on line flux of data
+                linelist[main_key]['FfitErr'].append(line_flux(s2d).uncertainty.value)   # error on line flux of model
+                
+                linelist[main_key]['EW'].append(equivalent_width(s1d).value)             # line equivalent width
+                
+                sf = np.log10(surface_scaling*line_flux(s1d).value)                      # surface flux of line
+                linelist[main_key]['log10SFline'].append(sf + 0.0)                       #   surface flux is log10(sf)
+                
+                sfErr = np.sqrt((line_flux(s1d).uncertainty/line_flux(s1d))**2 + 
+                                (radiusErr/radius)**2 + 
+                                (distanceErr/distance)**2)                               # error on surface flux
+                linelist[main_key]['log10SFlineErr'].append(sfErr.value/np.log(10))      #    error is log10(sfErr)
+
+            
     return linelist
     
 
