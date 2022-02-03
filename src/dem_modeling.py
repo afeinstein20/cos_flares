@@ -1,3 +1,10 @@
+"""
+This DEM modeling follows the methods of Duvvuri et al. (2021).
+The bulk of the code was written by Hannah Diamond-Lowe as part of 
+    Diamond-Lowe et al. (2021).
+Documentation and restructuring was done by Adina Feinstein.
+"""
+
 import copy
 import pickle
 import numpy as np
