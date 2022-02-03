@@ -1,0 +1,11 @@
+numpy
+astropy
+pickle
+pandas
+tqdm
+matplotlib
+chiantipy
+dynesty
+scipy
+lmfit
+specutils
