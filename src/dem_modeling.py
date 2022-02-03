@@ -27,6 +27,8 @@ from specutils import Spectrum1D, SpectralRegion
 from specutils.analysis import line_flux, equivalent_width
 from astropy.nddata import StdDevUncertainty, NDUncertainty
 
+from utils import gaussian
+
 
 __all__ = ['init_dict', 'setup_linelist', 'ChiantiSetup', 'DEMModeling']
 
@@ -45,6 +47,8 @@ def init_dict(ions):
     -------
     linelist : dictionary
        The beginning of the linelist dictionary.
+    subkeys : list
+       The keys for each ion dictionary.
     """
     subkeys = ['centers', 'lineX', 'lineY', 'lineYerr',
                'lineFit', 'amp', 'ampErr', 'fittedCenter',
@@ -53,7 +57,7 @@ def init_dict(ions):
                'log10SFlineErr']
 
     all_keys = np.zeros(len(ions), dtype='U32')
-    for i in range(len(line_table)):
+    for i in range(len(ions)):
         if ' ' in ions[i]:
             all_keys[i] = ions[i].replace(' ', '') # Removes spaces if necessary
         else:
@@ -68,7 +72,7 @@ def init_dict(ions):
         for s in range(len(subkeys)):
             linelist[all_keys[i]][subkeys[s]] = []
 
-    return linelist
+    return linelist, subkeys
 
 
 def setup_linelist(wavelength, flux, flux_err, line_table,
@@ -104,7 +108,8 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
     flux_units : astropy.units.Unit, optional
        The flux units of the spectrum. Default is erg/s/cm^2/AA.
     """
-    linelist = init_dict(line_table['Ion'])
+    linelist, subkeys = init_dict(line_table['Ion'])
+    surface_scaling = ( (distance/radius)**2 ).value
 
     for i in range(len(line_table)):
 
@@ -181,6 +186,11 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
                 linelist[main_key]['log10SFlineErr'].append(sfErr.value/np.log(10))      #    error is log10(sfErr)
 
             
+    # just some necessary cleaning/reformatting for later
+    for ak in list(linelist.keys()):
+        for s in subkeys:
+            linelist[ak][s] = np.array(linelist[ak][s])
+
     return linelist
     
 
@@ -476,6 +486,7 @@ class DEMModeling(object):
             lines[line]['avgDEMErr'] = []
 
             for i, w in enumerate(lines[line]['centers']):
+                #print(lines[line]['CHIname'])
                 peakInd = np.argwhere(self.G_T[lines[line]['CHIname']][w] == self.G_T[lines[line]['CHIname']][w].max())[0]
                 lines[line]['peakFormTemp'].append(self.G_T['lineTemp'][peakInd])
                 
@@ -492,7 +503,7 @@ class DEMModeling(object):
                 avgDEMErrs.append(avgDEMErr / (avgDEM * np.log(10)))
                 
                 weights.append(10**(lines[line]['log10SFlineErr'][i]))
-                print(line, i, w, 10**(lines[line]['log10SFlineErr'][i]))
+                #print(line, i, w, 10**(lines[line]['log10SFlineErr'][i]))
 
 
         peakFormTemps = np.hstack(peakFormTemps)
