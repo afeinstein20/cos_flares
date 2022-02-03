@@ -139,12 +139,16 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
             mini = out.minimize(max_nfev=2000)
 
             # Gets errors on the amplitude
-            upp = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
-                           mini.params['g_f'].value+mini.params['g_f'].stderr)
-            low = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
-                           mini.params['g_f'].value-mini.params['g_f'].stderr)
-            amp_std = np.nanmedian([np.nanmax(upp)-np.nanmax(out.best_fit),
-                                    np.nanmax(out.best_fit)-np.nanmax(low)])
+            try:
+                upp = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                               mini.params['g_f'].value+mini.params['g_f'].stderr)
+                low = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                               mini.params['g_f'].value-mini.params['g_f'].stderr)
+                amp_std = np.nanmedian([np.nanmax(upp)-np.nanmax(out.best_fit),
+                                        np.nanmax(out.best_fit)-np.nanmax(low)])
+            except:
+                print("Couldn't get amplitude error for: ", line_table['Ion'][i], " at ", line_table['wave_obs'][i])
+                amp_std = 0.0
 
             # Sets up Spectrum1D objects for measuring line fluxes
             #    Spectrum1D object for the data
