@@ -49,12 +49,13 @@ def blackbody(wavelength, T):
     e = (constants.h*constants.c)/(wavelength*constants.k_B*T)
     return frac * 1/(np.exp(e)-1)
 
-def gaussian(x, mu, std, f, lsf):
+def gaussian(x, mu, std, f):#, lsf):
     """ A gaussian model. """
     exp = -0.5 * (x-mu)**2 / std**2
     denom = std * np.sqrt(np.pi * 2.0)
     g = f / denom * np.exp(exp)
-    return np.convolve(lsf, g, 'same')
+    return g
+#    return np.convolve(lsf, g, 'same')
 
 def skewed_gaussian(x, eta, omega, alpha, offset, normalization):
     """ A skewed gaussian model.  """

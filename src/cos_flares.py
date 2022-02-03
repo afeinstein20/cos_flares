@@ -515,7 +515,8 @@ class FlaresWithCOS(object):
 
 
     def model_line_shape(self, ion, mask, shape='gaussian',
-                         ext=100, ngauss=1):
+                         ext=100, ngauss=1, f=None,
+                         ferr=None, lsf=None):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
@@ -560,32 +561,36 @@ class FlaresWithCOS(object):
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
 
-        # finds the line spread profile closest to the ion in question #
-        argmin = np.argmin(np.abs([float(i) for i in self.lsf_table.colnames] - wc))
-        lsf = self.lsf_table[self.lsf_table.colnames[argmin]].data
-        lsf /= np.nanmax(lsf)
-
         velocity, _ = self.to_velocity(np.nanmedian(self.wavelength[mask],axis=0),wc)
         velocity    = velocity.value + 0.0
+
         reg = np.where( (velocity >= vmin-ext) & (velocity <= vmax+ext) )[0]
 
         wave = self.wavelength[mask][:,reg]
 
-        # interpolate to the same length as the line spread profile #
-        vel = np.linspace(velocity[reg][0], 
-                          velocity[reg][-1], 
-                          len(lsf))
+        # finds the line spread profile closest to the ion in question #
+        if lsf is None:
 
-        f = interp1d(velocity,
-                     np.nanmean(self.flux[mask,:], axis=0))
-        
-        err = np.nansum(self.flux_err[mask,:], axis=0)
-        ferr = interp1d(velocity,
-                        np.sqrt(np.nansum(self.flux_err[mask,:]**2,axis=0))/len(self.flux[mask,:])/3.0)#[0]))
+            argmin = np.argmin(np.abs([float(i) for i in self.lsf_table.colnames] - wc))
+            lsf = self.lsf_table[self.lsf_table.colnames[argmin]].data
+            lsf /= np.nanmax(lsf)
 
-        lk = LightCurve(time=vel, flux=f(vel), flux_err=ferr(vel)).normalize()
-        f = lk.flux.value
-        ferr = lk.flux_err.value
+            # interpolate line spread function to same length as line profile #
+            ivel = np.linspace(velocity[reg][0], 
+                               velocity[reg][-1], 
+                               len(lsf))
+            lsf_interp = interp1d(ivel, lsf)
+            lsf = lsf_interp(velocity[reg]) + 0.0
+
+        if f is None:
+            f = np.nanmedian(self.flux[mask,:], axis=0)
+        f = f[reg] + 0.0
+
+        if ferr is None:
+            ferr = np.sqrt(np.nansum(self.flux_err[mask,:]**2,axis=0))/len(self.flux[mask,:])
+        ferr = ferr[reg] + 0.0
+            
+        vel = velocity[reg] + 0.0
 
         for i in range(ngauss):
             if i == 0:
@@ -610,9 +615,8 @@ class FlaresWithCOS(object):
 
         for i in range(ngauss):
             pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+5, max=vel.max()-5)
-            pars['g{}_{}'.format(i, 'std')].set(value=10, min=1, max=200)
-            pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.1, max=400)
-            #pars['g{}_{}'.format(i, 'off')].set(value=0, min=-0.5, max=0.5)
+            pars['g{}_{}'.format(i, 'std')].set(value=10, min=0.1, max=200)
+            pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.01, max=400)
 
         init = gmodel.eval(pars, x=vel)
         out = gmodel.fit(f,
@@ -620,7 +624,6 @@ class FlaresWithCOS(object):
                          x=vel,
                          weights=1.0/ferr,
                          verbose=True,
-                         #method='L-BFGS-B', 
                          max_nfev=3000)
         return vel, f, ferr, wave, lsf, out
 

@@ -16,7 +16,32 @@ from scipy.interpolate import interp1d
 from dynesty import DynamicNestedSampler
 
 
-__all__ = ['ChiantiSetup', 'DEMModeling']
+__all__ = ['setup_linelist', 'ChiantiSetup', 'DEMModeling']
+
+
+def setup_linelist(wavelength, flux, flux_err, line_table):
+    """
+    Creates the dictionary format needed to run the DEM modeling.
+
+    Parameters
+    ----------
+    wavelength : np.array
+       1D wavelength array.
+    flux : np.array
+       1D flux array.
+    flux_err : np.array
+       1D flux error array.
+    line_table : astropy.table.Table
+       Table with emission lines to evaluate over. The table
+       should include the line name and center wavelength at 
+       a minimum. Could also include `vmin` and `vmax`, or 
+       the range to include in each feature.
+    """
+    linelist = {}
+
+
+    return linelist
+    
 
 
 class ChiantiSetup(object):
