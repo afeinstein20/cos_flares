@@ -77,7 +77,8 @@ def init_dict(ions):
 
 def setup_linelist(wavelength, flux, flux_err, line_table,
                    distance, distanceErr, radius, radiusErr, scaling=1e-14,
-                   flux_units=units.erg/units.s/units.cm**2/units.AA):
+                   flux_units=units.erg/units.s/units.cm**2/units.AA,
+                   xray=False):
     """
     Creates the dictionary format needed to run the DEM modeling.
 
@@ -107,7 +108,15 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
        Default is 1e-14.
     flux_units : astropy.units.Unit, optional
        The flux units of the spectrum. Default is erg/s/cm^2/AA.
+    xray : bool, optional
+       A key to switch to X-ray specific lines or not. Default
+       is False.
     """
+    if xray==False:
+        line_table = line_table[line_table['X-ray'] == 0]
+    else:
+        line_table = line_table[line_table['X-ray'] == 1]
+
     linelist, subkeys = init_dict(line_table['Ion'])
     surface_scaling = ( (distance/radius)**2 ).value
 
@@ -128,8 +137,8 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
             gmodel = Model(gaussian, prefix='g_')
             pars = gmodel.make_params()
             pars['g_mu'].set(value=line_table['wave_obs'][i], 
-                             min=wavelength[q][5],
-                             max=wavelength[q][-5])
+                             min=wavelength[q][0],
+                             max=wavelength[q][-1])
             pars['g_std'].set(value=0.1, min=0.01, max=20)
             pars['g_f'].set(value=0.5, min=0.01, max=40)
             init = gmodel.eval(pars, x=wavelength[q])
@@ -174,8 +183,8 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
                 linelist[main_key]['sig'].append(mini.params['g_std'].value)             # std of the Gaussian
                 linelist[main_key]['sigErr'].append(mini.params['g_std'].stderr)         # error on the std
                 
-                linelist[main_key]['Fline'].append(line_flux(s1d).value)                 # line flux of data
-                linelist[main_key]['Ffit'].append(line_flux(s2d).value)                  # line flux of model
+                linelist[main_key]['Fline'].append(line_flux(s1d).value/(4*np.pi)**2)    # line flux of data
+                linelist[main_key]['Ffit'].append(line_flux(s2d).value/(4*np.pi)**2)     # line flux of model
                 linelist[main_key]['FlineErr'].append(line_flux(s1d).uncertainty.value)  # error on line flux of data
                 linelist[main_key]['FfitErr'].append(line_flux(s2d).uncertainty.value)   # error on line flux of model
                 
@@ -208,7 +217,7 @@ class ChiantiSetup(object):
 
     def __init__(self, linelist, logT_range, wave_range, 
                  eDensity=1e8,
-                 abundance='sun_coronal_2012_schmelz'):
+                 abundance='sun_coronal_2012_schmelz', setup=False):
         """
         Initializes the class.
 
@@ -236,8 +245,9 @@ class ChiantiSetup(object):
         self.wave_range = wave_range
         self.abundance  = abundance
 
-        print("Setting up Chianti spectrum. This may take a few minutes . . .")
-        self.library_setup()
+        if setup:
+            print("Setting up Chianti spectrum. This may take a few minutes . . .")
+            self.library_setup()
 
 
     def library_setup(self):
@@ -250,7 +260,7 @@ class ChiantiSetup(object):
         ----------
         bunch : ChiantiPy.core.Spectrum.bunch
         """
-        tempRange = np.logspace(self.logT_range[0], self.logT_range[1], 5)
+        tempRange = np.logspace(self.logT_range[0], self.logT_range[1], 10)
         bunch = ch.bunch(temperature=tempRange, eDensity=self.eDensity,
                          wvlRange=self.wave_range,
                          abundance=self.abundance, 
@@ -490,23 +500,26 @@ class DEMModeling(object):
             lines[line]['avgDEMErr'] = []
 
             for i, w in enumerate(lines[line]['centers']):
-                #print(lines[line]['CHIname'])
-                peakInd = np.argwhere(self.G_T[lines[line]['CHIname']][w] == self.G_T[lines[line]['CHIname']][w].max())[0]
-                lines[line]['peakFormTemp'].append(self.G_T['lineTemp'][peakInd])
-                
-                integratedGT = sci.integrate.simps(self.G_T[lines[line]['CHIname']][w], self.G_T['lineTemp'])
-                lines[line]['integratedGT'].append(integratedGT)
-                
-                avgDEM = lines[line]['I_ul'][i]/integratedGT
-                avgDEMErr = lines[line]['I_ulErr'][i]/integratedGT
-                lines[line]['avgDEM'].append(avgDEM)
-                lines[line]['avgDEMErr'].append(avgDEMErr)
-                
-                peakFormTemps.append(np.log10(lines[line]['peakFormTemp'][i]))
-                avgDEMs.append(np.log10(lines[line]['avgDEM'][i]))
-                avgDEMErrs.append(avgDEMErr / (avgDEM * np.log(10)))
-                
-                weights.append(10**(lines[line]['log10SFlineErr'][i]))
+                try:
+                    peakInd = np.argwhere(self.G_T[lines[line]['CHIname']][w] == self.G_T[lines[line]['CHIname']][w].max())[0]
+                    lines[line]['peakFormTemp'].append(self.G_T['lineTemp'][peakInd])
+                    
+                    integratedGT = sci.integrate.simps(self.G_T[lines[line]['CHIname']][w], self.G_T['lineTemp'])
+                    lines[line]['integratedGT'].append(integratedGT)
+                    
+                    avgDEM = lines[line]['I_ul'][i]/integratedGT
+                    avgDEMErr = lines[line]['I_ulErr'][i]/integratedGT
+                    lines[line]['avgDEM'].append(avgDEM)
+                    lines[line]['avgDEMErr'].append(avgDEMErr)
+                    
+                    peakFormTemps.append(np.log10(lines[line]['peakFormTemp'][i]))
+                    avgDEMs.append(np.log10(lines[line]['avgDEM'][i]))
+                    avgDEMErrs.append(avgDEMErr / (avgDEM * np.log(10)))
+                    
+                    weights.append(10**(lines[line]['log10SFlineErr'][i]))
+                    
+                except:
+                    print(lines[line]['CHIname'], w)
                 #print(line, i, w, 10**(lines[line]['log10SFlineErr'][i]))
 
 
@@ -517,7 +530,6 @@ class DEMModeling(object):
         DEMarray = np.array([peakFormTemps, avgDEMs, weights]).T
         DEMarray = DEMarray[DEMarray[:,0].argsort()].T
 
-        ## PRETTY SURE RIGHT NOW THIS DOESN'T HANDLE NO RESAMPLING ## 
         if resample:
             results = self.fit_DEM(peakFormTemps, avgDEMs, avgDEMErrs)
             pickle.dump(results, open('{}.pkl'.format(results_filename), 'wb'))
