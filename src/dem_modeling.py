@@ -159,6 +159,9 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
                 print("Couldn't get amplitude error for: ", line_table['Ion'][i], " at ", line_table['wave_obs'][i])
                 amp_std = 0.0
 
+            steradian = (4*np.pi)**2
+            steradian = 3282.806350011744
+
             # Sets up Spectrum1D objects for measuring line fluxes
             #    Spectrum1D object for the data
             s1d = Spectrum1D(spectral_axis=wavelength[q]*units.AA, 
@@ -182,21 +185,21 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
                 linelist[main_key]['fittedCenter'].append(mini.params['g_mu'].value)     # fitted line center
                 linelist[main_key]['sig'].append(mini.params['g_std'].value)             # std of the Gaussian
                 linelist[main_key]['sigErr'].append(mini.params['g_std'].stderr)         # error on the std
-                
-                linelist[main_key]['Fline'].append(line_flux(s1d).value/(4*np.pi)**2)    # line flux of data
-                linelist[main_key]['Ffit'].append(line_flux(s2d).value/(4*np.pi)**2)     # line flux of model
+
+                linelist[main_key]['Fline'].append(line_flux(s1d).value)       # line flux of data
+                linelist[main_key]['Ffit'].append(line_flux(s2d).value)        # line flux of model
                 linelist[main_key]['FlineErr'].append(line_flux(s1d).uncertainty.value)  # error on line flux of data
                 linelist[main_key]['FfitErr'].append(line_flux(s2d).uncertainty.value)   # error on line flux of model
                 
                 linelist[main_key]['EW'].append(equivalent_width(s1d).value)             # line equivalent width
                 
-                sf = np.log10(surface_scaling*line_flux(s1d).value)                      # surface flux of line
+                sf = np.log10(surface_scaling*line_flux(s1d).value/steradian)            # surface flux of line
                 linelist[main_key]['log10SFline'].append(sf + 0.0)                       #   surface flux is log10(sf)
                 
                 sfErr = np.sqrt((line_flux(s1d).uncertainty/line_flux(s1d))**2 + 
                                 (radiusErr/radius)**2 + 
                                 (distanceErr/distance)**2)                               # error on surface flux
-                linelist[main_key]['log10SFlineErr'].append(sfErr.value/np.log(10))      #    error is log10(sfErr)
+                linelist[main_key]['log10SFlineErr'].append(sfErr.value/np.log(10)/steradian)      #    error is log10(sfErr)
 
             
     # just some necessary cleaning/reformatting for later
