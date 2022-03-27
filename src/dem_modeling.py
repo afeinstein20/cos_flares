@@ -354,7 +354,7 @@ class ChiantiSetup(object):
                     if line == 'CIII':
                         wvlRange = [w-3, w+3]
                     else: 
-                        wvlRange = [w-0.1, w+0.1]
+                        wvlRange = [w-0.5, w+0.5]
                         
                     dist = np.abs(np.asarray(ChiantiIon.Intensity['wvl']) - w)
                     idx = np.argmin(dist)
@@ -362,6 +362,8 @@ class ChiantiSetup(object):
                     G_T[CHIname][w] = ChiantiIon.Intensity['intensity'][:,idx]
             except:
                 print("Couldn't get: ", line)
+                
+
         G_T['ionTemp'] = tempRangeLines
         self.G_T = G_T
 
@@ -713,3 +715,26 @@ class DEMModeling(object):
             elif i==2:
                 self.linelist['EUV']['DEMUV']['ions_hi'] = localdict
                 self.dem_ions_hi = localdict
+
+
+    def get_euv(self):
+        """
+        Create the output EUV spectrum.
+
+        Attributes
+        ----------
+        euv_wave : np.ndarray
+           Wavelength array for the modeled EUV spectrum.
+        euv_flux : np.ndarray
+           Flux array for the modeled EUV spectrum.
+        """
+        wave, euv = np.array([]), np.array([])
+        
+        for k in self.linelist['EUV']['DEMUV']['ions'].keys():
+            wave = np.append(wave, 
+                             self.linelist['EUV']['DEMUV']['ions'][k]['centers'])
+            euv  = np.append(euv,
+                             np.array(self.linelist['EUV']['DEMUV']['ions'][k]['log10SFline']))
+            
+        self.euv_wave = wave + 0.0
+        self.euv_flux = euv  + 0.0
