@@ -169,7 +169,7 @@ class cosReduce(object):
             return("You have all reference files needed!")
             
 
-    def reduce_data(self, output_path):
+    def reduce_data(self, output_path, component='a'):
         """
         Uses the calcos package to reduce new data.
 
@@ -205,8 +205,11 @@ class cosReduce(object):
                 os.mkdir(path_b)
             except OSError:
                 return("Couldn't find or create the output_path.")
-                         
-        for letter in ['a', 'b']:
+                      
+        if type(component) == str:
+            component = [component]
+   
+        for letter in component:
             if letter == 'a':
                 outdir = path_a
             else:
@@ -370,13 +373,18 @@ class cosReduce(object):
 
         for i in range(len(fn)):
             x1ddata = fits.getdata(fn[i])
-            
-            wavelength = np.concatenate((x1ddata["wavelength"][1],
-                                         x1ddata["wavelength"][0])) + offset
-            flux = np.concatenate((x1ddata["flux"][1], 
-                                   x1ddata["flux"][0]))
-            err = np.concatenate((x1ddata["error"][1],
-                                  x1ddata["error"][0]))
+
+            try:
+                wavelength = np.concatenate((x1ddata["wavelength"][1],
+                                             x1ddata["wavelength"][0])) + offset
+                flux = np.concatenate((x1ddata["flux"][1], 
+                                       x1ddata["flux"][0]))
+                err = np.concatenate((x1ddata["error"][1],
+                                      x1ddata["error"][0]))
+            except:
+                wavelength = x1ddata["wavelength"][0] + offset
+                flux = x1ddata["flux"][0] + 0.0
+                err  = x1ddata["error"][0]+ 0.0
 
             if i == 0:
                 all_wave = np.zeros((len(fn), len(wavelength)))
