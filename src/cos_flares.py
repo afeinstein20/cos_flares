@@ -184,8 +184,8 @@ class FlaresWithCOS(object):
             v, _ = self.to_velocity(self.wavelength[x], mid=line)
             reg = np.where( (v.value >= vmin) & (v.value <= vmax) )[0]
             
-            widths[i] = np.trapz(self.flux[x][reg], x=self.wavelength[x][reg])
-            #widths[i] = np.nansum(self.flux[x][reg])
+            #widths[i] = np.trapz(self.flux[x][reg], x=self.wavelength[x][reg])
+            widths[i] = np.nansum(self.flux[x][reg])
             errors[i] = np.sqrt(np.nansum(self.flux_err[x][reg]**2))
 
         try:
@@ -380,13 +380,6 @@ class FlaresWithCOS(object):
         time = np.array(self.time[mask].value) + 0.0
         flux = np.array(self.width_table[ion][mask]) + 0.0
         flux_err = np.array(self.error_table[ion][mask]) /10.0 #+ 0.0
-
-        #if x is not None and y is None:
-        #    finterp = interp1d(time, flux)
-        #    flux = finterp(x)
-            
-        #    einterp = interp1d(time, flux_err)
-        #    flux_err = einterp(x)
             
         if x is not None:
             time = x + 0.0

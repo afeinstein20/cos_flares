@@ -66,7 +66,7 @@ def plot_hdl_dem(path, ax1, c='k', label='', ax2=None, alpha=0.5):
     return
 
 
-def plot_binned_spectrum(w, f, distance, ax, label='',
+def plot_binned_spectrum(w, f, e, distance, ax, label='',
                          bins=np.arange(0,4000,1), c='k'):
     """
     Plots the binned DEM spectrum to comapre to data.
@@ -95,22 +95,29 @@ def plot_binned_spectrum(w, f, distance, ax, label='',
     None
     """
     flux = np.array([])
+    err  = np.array([])
     centers = np.array([])
     for i in range(len(bins)-1):
-        q = np.where( (w>bins[i]) & (w<=bins[i+1]))[0]
-        
-        if len(q)>0:
-            flux = np.append(flux, np.trapz(f[q], w[q]))
-            centers = np.append(centers, (bins[i]+bins[i+1])/2.0)
-            
+        if bins[i+1]-bins[i] < 30:
+            q = np.where( (w>bins[i]) & (w<=bins[i+1]))[0]
+
+            if len(q)>0:
+                flux = np.append(flux, np.trapz(f[q], w[q]))
+                err  = np.append(err , np.sqrt(np.nansum(e[q]**2))/(len(q)-1))
+                centers = np.append(centers, (bins[i]+bins[i+1])/2.0)
     # Conversion from flux density to flux
     flux = flux*4*np.pi*distance**2
     q = flux > 0
-    ax.plot(centers[q], flux[q], marker='o', c=c, ms=10, label=label)
+    # plot errorbar function
+    ax.errorbar(centers[q], 
+                flux[q], yerr=err[q]*4*np.pi*distance**2,
+                marker='o', c=c, ms=10, label=label, linestyle='')
     return
 
 
-def compare_with_data(dem_wave, dem_flux, data_wave, data_flux, lines,
+def compare_with_data(dem_wave, dem_flux, dem_err,
+                      data_wave, data_flux, data_err,
+                      lines,
                       distance, ax, c='k', label='', binsize=None):
     """
     Compares the line flux from the DEM to data.
@@ -154,9 +161,15 @@ def compare_with_data(dem_wave, dem_flux, data_wave, data_flux, lines,
                    (data_wave < lines[i]+binsize[i]) )
 
         flux_dem  = np.trapz(dem_flux[dem_q], dem_wave[dem_q]) * 4*np.pi*distance**2
-        flux_data = np.trapz(data_flux[data_q], data_wave[data_q]) * 4*np.pi*distance**2
+        err_dem   = np.trapz(dem_err[dem_q], dem_wave[dem_q])  * 4*np.pi*distance**2
 
-        ax.plot(np.log10(flux_data), 
-                np.log10(flux_dem), marker='o', c=c, ms=8)
+        flux_data = np.trapz(data_flux[data_q], data_wave[data_q]) * 4*np.pi*distance**2
+        err_data  = np.trapz(data_err[data_q], data_wave[data_q]) * 4*np.pi*distance**2
+
+        ax.errorbar(np.log10(flux_data), 
+                    np.log10(flux_dem), 
+                    #xerr=np.abs(np.log10(flux_data) - np.log10(err_data)),
+                    #yerr=np.abs(np.log10(flux_dem) - np.log10(err_dem)),
+                    marker='o', c=c, ms=8, linestyle='')
 
     return
