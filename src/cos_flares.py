@@ -94,7 +94,7 @@ class FlaresWithCOS(object):
 
 
     def to_velocity(self, wave, mid=None):
-        """ 
+        """
         Converts wavelength to velocity space given some
         reference wavelength.
 
@@ -409,7 +409,7 @@ class FlaresWithCOS(object):
 
             for i in range(len(amp)):
                 pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
-                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-60, max=t0[i]+60)
+                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-30, max=t0[i]+30)
                 pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
                 pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
                 pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=10)
@@ -428,7 +428,7 @@ class FlaresWithCOS(object):
             pars = fmodel.make_params()
 
             for i in range(len(eta)):
-                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-100, max=eta[i]+100)
+                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-40, max=eta[i]+40)
                 pars['f{0:02d}_{1}'.format(i, 'omega')].set(value=omega[i], min=0.1, max=500)
                 pars['f{0:02d}_{1}'.format(i, 'alpha')].set(value=alpha[i], min=0, max=200)
                 pars['f{0:02d}_{1}'.format(i, 'normalization')].set(value=1e-3, min=1e-7, max=1)
@@ -449,17 +449,17 @@ class FlaresWithCOS(object):
             pars = fmodel.make_params()
 
             for i in range(len(eta)):
-                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-100, max=eta[i]+100)
+                pars['f{0:02d}_{1}'.format(i, 'eta')].set(value=eta[i], min=eta[i]-50, max=eta[i]+50)
                 pars['f{0:02d}_{1}'.format(i, 'omega')].set(value=omega[i], min=1, max=750)
                 pars['f{0:02d}_{1}'.format(i, 'alpha')].set(value=alpha[i], min=0, max=200)
                 pars['f{0:02d}_{1}'.format(i, 'normalization')].set(value=1, min=0.9, max=1.1)
 
-                pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=flux.min(), max=amp[i]*20)
-                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=np.nanmin(time), max=np.nanmax(time))
+                pars['f{0:02d}_{1}'.format(i, 'amp')].set(value=amp[i], min=amp[i]/10, max=amp[i]*50)
+                pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=t0[i]-50, max=t0[i]+50)
                 pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
                 pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
 
-                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
+                pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=1)
 
 
         else:
