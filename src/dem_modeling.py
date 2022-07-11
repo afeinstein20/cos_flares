@@ -1,6 +1,6 @@
 """
 This DEM modeling follows the methods of Duvvuri et al. (2021).
-The bulk of the code was written by Hannah Diamond-Lowe as part of 
+The bulk of the code was written by Hannah Diamond-Lowe as part of
     Diamond-Lowe et al. (2021).
 Documentation and restructuring was done by Adina Feinstein.
 """
@@ -24,7 +24,7 @@ from dynesty import DynamicNestedSampler
 
 from lmfit.models import Model
 from specutils import Spectrum1D, SpectralRegion
-from specutils.analysis import line_flux, equivalent_width
+from specutils.analysis import (line_flux, equivalent_width, fwhm)
 from astropy.nddata import StdDevUncertainty, NDUncertainty
 
 from utils import gaussian
@@ -42,7 +42,7 @@ def init_dict(ions):
     ----------
     ions : list, np.ndarray
        List of ion keys to use.
-    
+
     Returns
     -------
     linelist : dictionary
@@ -52,8 +52,8 @@ def init_dict(ions):
     """
     subkeys = ['centers', 'lineX', 'lineY', 'lineYerr',
                'lineFit', 'amp', 'ampErr', 'fittedCenter',
-               'sig', 'sigErr', 'Fline', 'Ffit', 'FlineErr', 
-               'FlineErr', 'FfitErr', 'EW', 'log10SFline',
+               'sig', 'sigErr', 'Fline', 'Ffit', 'FlineErr',
+               'FlineErr', 'FfitErr', 'EW', 'FWHM', 'log10SFline',
                'log10SFlineErr']
 
     all_keys = np.zeros(len(ions), dtype='U32')
@@ -68,7 +68,7 @@ def init_dict(ions):
 
     for i in range(len(all_keys)):
         linelist[all_keys[i]] = {}
-    
+
         for s in range(len(subkeys)):
             linelist[all_keys[i]][subkeys[s]] = []
 
@@ -92,13 +92,13 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
        1D flux error array.
     line_table : astropy.table.Table
        Table with emission lines to evaluate over. The table
-       should include the line name and center wavelength at 
-       a minimum. Could also include `vmin` and `vmax`, or 
+       should include the line name and center wavelength at
+       a minimum. Could also include `vmin` and `vmax`, or
        the range to include in each feature.
     distance : float, astropy.units.Unit
        Distance to the star. Given in cm or with astropy units.
     distanceErr : float, astropy.units.Unit
-       Error on the distance. Given in cm or with astropy units.   
+       Error on the distance. Given in cm or with astropy units.
     radius : float, astropy.units.Unit
        Radius of the star. Given in cm or with astropy units.
     radiusErr : float, astropy.units.Unit
@@ -123,7 +123,7 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
     for i in range(len(line_table)):
 
         if line_table['quality'][i] == 0: # quality control on lines
-            
+
             if ' ' in line_table['Ion'][i]:
                 main_key = line_table['Ion'][i].replace(' ', '')
             else:
@@ -136,27 +136,30 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
             # Fits a Gaussian profile to the line
             gmodel = Model(gaussian, prefix='g_')
             pars = gmodel.make_params()
-            pars['g_mu'].set(value=line_table['wave_obs'][i], 
+            pars['g_mu'].set(value=line_table['wave_obs'][i],
                              min=wavelength[q][0],
                              max=wavelength[q][-1])
             pars['g_std'].set(value=0.1, min=0.01, max=20)
             pars['g_f'].set(value=0.5, min=0.01, max=40)
             init = gmodel.eval(pars, x=wavelength[q])
-            out  = gmodel.fit(flux[q]/scaling, 
+            out  = gmodel.fit(flux[q]/scaling,
                               pars,
                               x=wavelength[q])
             mini = out.minimize(max_nfev=2000)
 
             # Gets errors on the amplitude
             try:
-                upp = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                upp = gaussian(wavelength[q], mini.params['g_mu'].value,
+                               mini.params['g_std'].value,
                                mini.params['g_f'].value+mini.params['g_f'].stderr)
-                low = gaussian(wavelength[q], mini.params['g_mu'].value, mini.params['g_std'].value,
+                low = gaussian(wavelength[q], mini.params['g_mu'].value,
+                               mini.params['g_std'].value,
                                mini.params['g_f'].value-mini.params['g_f'].stderr)
                 amp_std = np.nanmedian([np.nanmax(upp)-np.nanmax(out.best_fit),
                                         np.nanmax(out.best_fit)-np.nanmax(low)])
             except:
-                print("Couldn't get amplitude error for: ", line_table['Ion'][i], " at ", line_table['wave_obs'][i])
+                print("Couldn't get amplitude error for: ", line_table['Ion'][i],
+                      " at ", line_table['wave_obs'][i])
                 amp_std = 0.0
 
             steradian = (4*np.pi)**2
@@ -164,21 +167,21 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
 
             # Sets up Spectrum1D objects for measuring line fluxes
             #    Spectrum1D object for the data
-            s1d = Spectrum1D(spectral_axis=wavelength[q]*units.AA, 
+            s1d = Spectrum1D(spectral_axis=wavelength[q]*units.AA,
                              flux=flux[q]*flux_units,
                              uncertainty=StdDevUncertainty(flux_err[q]*flux_units))
             #    Spectrum1D object for the best fit
-            s2d = Spectrum1D(spectral_axis=wavelength[q]*units.AA, 
+            s2d = Spectrum1D(spectral_axis=wavelength[q]*units.AA,
                              flux=out.best_fit*scaling*flux_units,
                              uncertainty=StdDevUncertainty(flux_err[q]*flux_units))
 
             if main_key in list(linelist.keys()): # double checks the line is in the dict
                 linelist[main_key]['centers'].append(line_table['wave_obs'][i])          # center wavelength
-                
+
                 linelist[main_key]['lineX'].append(wavelength[q])                        # wavelength array
                 linelist[main_key]['lineY'].append(flux[q])                              # flux array
                 linelist[main_key]['lineYerr'].append(flux_err[q])                       # flux error array
-                
+
                 linelist[main_key]['lineFit'].append(out.best_fit*scaling)               # best-fit Gaussian
                 linelist[main_key]['amp'].append(np.nanmax(out.best_fit)*scaling)        # amplitude of the fit
                 linelist[main_key]['ampErr'].append(amp_std*scaling)                     # error on the amp fit
@@ -190,25 +193,26 @@ def setup_linelist(wavelength, flux, flux_err, line_table,
                 linelist[main_key]['Ffit'].append(line_flux(s2d).value)        # line flux of model
                 linelist[main_key]['FlineErr'].append(line_flux(s1d).uncertainty.value)  # error on line flux of data
                 linelist[main_key]['FfitErr'].append(line_flux(s2d).uncertainty.value)   # error on line flux of model
-                
+
                 linelist[main_key]['EW'].append(equivalent_width(s1d).value)             # line equivalent width
-                
+                linelist[main_key]['FWHM'].append(fwhm(s1d).value)
+
                 sf = np.log10(surface_scaling*line_flux(s1d).value/steradian)            # surface flux of line
                 linelist[main_key]['log10SFline'].append(sf + 0.0)                       #   surface flux is log10(sf)
-                
-                sfErr = np.sqrt((line_flux(s1d).uncertainty/line_flux(s1d))**2 + 
-                                (radiusErr/radius)**2 + 
+
+                sfErr = np.sqrt((line_flux(s1d).uncertainty/line_flux(s1d))**2 +
+                                (radiusErr/radius)**2 +
                                 (distanceErr/distance)**2)                               # error on surface flux
                 linelist[main_key]['log10SFlineErr'].append(sfErr.value/np.log(10)/steradian)      #    error is log10(sfErr)
 
-            
+
     # just some necessary cleaning/reformatting for later
     for ak in list(linelist.keys()):
         for s in subkeys:
             linelist[ak][s] = np.array(linelist[ak][s])
 
     return linelist
-    
+
 
 
 class ChiantiSetup(object):
@@ -218,7 +222,7 @@ class ChiantiSetup(object):
        were implemented in Diamond-Lowe et al. (2022).
     """
 
-    def __init__(self, linelist, logT_range, wave_range, 
+    def __init__(self, linelist, logT_range, wave_range,
                  eDensity=1e8,
                  abundance='sun_coronal_2012_schmelz', setup=False):
         """
@@ -229,18 +233,18 @@ class ChiantiSetup(object):
         linelist : dictionary
         logT_range : np.ndarray
            An array or list of beginning and ending log(temperatures)
-           to run the Chianti function over. Should be a list/array  
-           of length = 2.      
+           to run the Chianti function over. Should be a list/array
+           of length = 2.
         wave_range : np.ndarray
            An array or list of beginning and ending wavelengths (in
            angstroms) to run the Chianti function over. Should be a
            list/array of length = 2.
-        eDensity : float, optional 
+        eDensity : float, optional
            The electron density to evaluate the Chianti lines over.
-           Default is 1e8.     
+           Default is 1e8.
         abundance : str, optional
            The reference file from the Chianti database to evalute
-           the library with respect to. Default is `sun_coronal_2012_schmelz`. 
+           the library with respect to. Default is `sun_coronal_2012_schmelz`.
         """
         self.linelist   = linelist
         self.eDensity   = eDensity
@@ -266,7 +270,7 @@ class ChiantiSetup(object):
         tempRange = np.logspace(self.logT_range[0], self.logT_range[1], 10)
         bunch = ch.bunch(temperature=tempRange, eDensity=self.eDensity,
                          wvlRange=self.wave_range,
-                         abundance=self.abundance, 
+                         abundance=self.abundance,
                          elementList=['al','ar','c','ca','co','cr','fe','h',
                                       'he','k','mg','mn','n','na','ne','ni','o',
                                       'p','s','si','ti','zn'])
@@ -275,7 +279,7 @@ class ChiantiSetup(object):
 
     def create_chiname(self, ion):
         """
-        Takes an ion name with roman numerals and makes it 
+        Takes an ion name with roman numerals and makes it
         Chianti readable, ex: CIII --> c_3. This will break
         if any elements have 'I', 'V' or 'X' in their names
         or if the ion species has any roman numberals > 'X'.
@@ -302,7 +306,7 @@ class ChiantiSetup(object):
 
         # converts roman numberals to digits
         while i < len(numerals):
-    
+
             if i+1<len(numerals) and numerals[i:i+2] in roman:
                 num+=roman[numerals[i:i+2]]
                 i+=2
@@ -343,26 +347,26 @@ class ChiantiSetup(object):
 
             G_T[CHIname] = {}
             try:
-                ChiantiIon = ch.ion(CHIname, 
-                                    temperature=G_T['lineTemp'], 
-                                    eDensity=self.eDensity, 
+                ChiantiIon = ch.ion(CHIname,
+                                    temperature=G_T['lineTemp'],
+                                    eDensity=self.eDensity,
                                     abundance=self.abundance)
-                
+
                 ChiantiIon.intensity()
-                
+
                 for w in self.linelist[line]['centers']:
                     if line == 'CIII':
                         wvlRange = [w-3, w+3]
-                    else: 
+                    else:
                         wvlRange = [w-0.5, w+0.5]
-                        
+
                     dist = np.abs(np.asarray(ChiantiIon.Intensity['wvl']) - w)
                     idx = np.argmin(dist)
-                    
+
                     G_T[CHIname][w] = ChiantiIon.Intensity['intensity'][:,idx]
             except:
                 print("Couldn't get: ", line)
-                
+
 
         G_T['ionTemp'] = tempRangeLines
         self.G_T = G_T
@@ -370,7 +374,7 @@ class ChiantiSetup(object):
 
     def get_all_ions(self, top=10):
         """
-        
+
         Parameters
         ----------
         top : int or list, optional
@@ -383,16 +387,16 @@ class ChiantiSetup(object):
 
         for i,ion in enumerate(tqdm(allIons)):
 
-            if ion not in self.G_T.keys(): 
+            if ion not in self.G_T.keys():
                 self.G_T[ion] = {}
 
-            ChiantiIon = ch.ion(ion, 
-                                temperature=self.G_T['ionTemp'], 
-                                eDensity=self.eDensity, 
+            ChiantiIon = ch.ion(ion,
+                                temperature=self.G_T['ionTemp'],
+                                eDensity=self.eDensity,
                                 abundance=self.abundance)
 
         # get the top 10 (?) transition lines for each ion in the part of the spectrum we can't see
-        #    can go back and do this for *every* transition if needed            
+        #    can go back and do this for *every* transition if needed
             if type(top) == np.ndarray or type(top) == list:
                 ChiantiIon.intensityList(wvlRange=self.wave_range, top=top[i])
             else:
@@ -400,12 +404,12 @@ class ChiantiSetup(object):
 
             try:
                 # 'intensityTop' comes in order of increasing wavelength, but I want it in decreasing intensity, from highest to lowest
-                topArray = np.array([ChiantiIon.Intensity['intensityTop'], 
+                topArray = np.array([ChiantiIon.Intensity['intensityTop'],
                                      ChiantiIon.Intensity['wvlTop']]).T
                 topArray = topArray[topArray[:,0].argsort()].T
                 wvls = topArray[1][::-1] # go in order of highest intensity wavelength to lowest
             except(KeyError): continue
-            
+
             for w in wvls:
                 dist = np.abs(np.asarray(ChiantiIon.Intensity['wvl']) - w)
                 idx = np.argmin(dist)
@@ -413,7 +417,7 @@ class ChiantiSetup(object):
                     GofT = ChiantiIon.Intensity['intensity'][:,idx]
                     self.G_T[ion][w] = GofT
                 except(AttributeError): continue
-                
+
         return
 
 
@@ -442,7 +446,7 @@ class DEMModeling(object):
         self.logT_range = logT_range
 
 
-    def create_DEM(self, specified_lines=[], resample=False, 
+    def create_DEM(self, specified_lines=[], resample=False,
                    nsamples=5000, quick_plot=False,
                    results_filename='DEMresults',
                    grid_filename='DEMgrid'):
@@ -478,7 +482,7 @@ class DEMModeling(object):
         DEM_upp : np.array
            Upper estimate to the DEM fit.
         """
-        
+
         lines = self.linelist
 
         if len(specified_lines) == 0:
@@ -491,7 +495,7 @@ class DEMModeling(object):
             if line not in specified_lines:
                 lines[line]['DEMEstimate'] = False
                 continue
-            else: 
+            else:
                 lines[line]['DEMEstimate'] = True
 
             I_ul = 10**lines[line]['log10SFline'] / np.pi  #[erg/cm^2/s/sr]  surface flux
@@ -508,21 +512,21 @@ class DEMModeling(object):
                 try:
                     peakInd = np.argwhere(self.G_T[lines[line]['CHIname']][w] == self.G_T[lines[line]['CHIname']][w].max())[0]
                     lines[line]['peakFormTemp'].append(self.G_T['lineTemp'][peakInd])
-                    
+
                     integratedGT = sci.integrate.simps(self.G_T[lines[line]['CHIname']][w], self.G_T['lineTemp'])
                     lines[line]['integratedGT'].append(integratedGT)
-                    
+
                     avgDEM = lines[line]['I_ul'][i]/integratedGT
                     avgDEMErr = lines[line]['I_ulErr'][i]/integratedGT
                     lines[line]['avgDEM'].append(avgDEM)
                     lines[line]['avgDEMErr'].append(avgDEMErr)
-                    
+
                     peakFormTemps.append(np.log10(lines[line]['peakFormTemp'][i]))
                     avgDEMs.append(np.log10(lines[line]['avgDEM'][i]))
                     avgDEMErrs.append(avgDEMErr / (avgDEM * np.log(10)))
-                    
+
                     weights.append(10**(lines[line]['log10SFlineErr'][i]))
-                    
+
                 except:
                     print(lines[line]['CHIname'], w)
                 #print(line, i, w, 10**(lines[line]['log10SFlineErr'][i]))
@@ -531,7 +535,7 @@ class DEMModeling(object):
         peakFormTemps = np.hstack(peakFormTemps)
         avgDEMs = np.hstack(avgDEMs)
         avgDEMErrs = np.hstack(avgDEMErrs)
-        
+
         DEMarray = np.array([peakFormTemps, avgDEMs, weights]).T
         DEMarray = DEMarray[DEMarray[:,0].argsort()].T
 
@@ -539,7 +543,7 @@ class DEMModeling(object):
             results = self.fit_DEM(peakFormTemps, avgDEMs, avgDEMErrs)
             pickle.dump(results, open('{}.pkl'.format(results_filename), 'wb'))
         else:
-            try: 
+            try:
                 results = pickle.load(open('{}.pkl'.format(results_filename), 'rb'))
             except FileNotFoundError :
                 results = self.fit_DEM(peakFormTemps, avgDEMs, avgDEMErrs)
@@ -551,7 +555,7 @@ class DEMModeling(object):
         values = params[:,1]
         values_lo = params[:,0]
         values_hi = params[:,2]
-        
+
         tempRangeLines = self.G_T['lineTemp']
         T = np.log10(tempRangeLines)
 
@@ -577,16 +581,16 @@ class DEMModeling(object):
             plt.plot(T, DEM, color='darkred', alpha=0.8, lw=3)
             plt.plot(T, DEMlo, color='deepskyblue', alpha=0.8, lw=3)
             plt.plot(T, DEMhi, color='deepskyblue', alpha=0.8, lw=3)
-            
+
             plt.xlabel('Temperature [K]')
             plt.ylabel('DEM [cm$^{-5}$ K$^{-1}$]')
             plt.ylim(18,27)
             plt.xlim(4,8)
             plt.show()
 
-        if 'EUV' not in lines.keys(): 
+        if 'EUV' not in lines.keys():
             lines['EUV'] = {}
-        if 'DEMUV' not in lines['EUV'].keys(): 
+        if 'DEMUV' not in lines['EUV'].keys():
             lines['EUV']['DEMUV'] = {}
 
         lines['EUV']['DEMUV']['Chebyshev'] = {}
@@ -598,8 +602,8 @@ class DEMModeling(object):
         self.DEM = DEM
         self.DEM_low = DEMlo
         self.DEM_upp = DEMhi
-        
-        
+
+
 
     def dem_resample(self, nsamples, results, T, samples):
         """
@@ -617,7 +621,7 @@ class DEMModeling(object):
         for i, c in enumerate(np.random.choice(len(wgts), nsamples, replace=False, p=wgts/np.sum(wgts))):
             params = samples.T[:, c]
             c_n = params[0:5]
-            cheb = np.polynomial.chebyshev.Chebyshev(c_n, domain=[self.logT_range[0], 
+            cheb = np.polynomial.chebyshev.Chebyshev(c_n, domain=[self.logT_range[0],
                                                                   self.logT_range[1]])
             modelDEM = np.array(cheb(T))
             DEMgrid[i] += modelDEM
@@ -629,32 +633,32 @@ class DEMModeling(object):
         """
         Fits the DEM using a Chebyshev polynomial.
         """
-        
+
         def lnlike(p):
             c_n = p[:5]
             s = 10**(p[-1])
             cheb = np.polynomial.chebyshev.Chebyshev(c_n, domain=[4, 8])
         #ensure that the first derivative at log10(T) = 4 the derivative is negative
-            if cheb.deriv(m=1)(4) > 0: 
+            if cheb.deriv(m=1)(4) > 0:
                 return -np.inf
-            if cheb.deriv(m=1)(8) > 0: 
+            if cheb.deriv(m=1)(8) > 0:
                 return -np.inf
         #ensure that the base-10 log of the polynomial is positive log10(6) to prevent really small DEMs
-            if cheb(6) < 0: 
+            if cheb(6) < 0:
                 return -np.inf
             modelDEM = np.array(cheb(peakFormT))
-            
+
             logl = np.log(1 / np.sqrt(2*np.pi*(DEMerr**2 + (s * modelDEM)**2))) - ((DEM - modelDEM)/(2*np.sqrt(DEMerr**2 + (s * modelDEM)**2)))**2
             return np.sum(logl)
 
         def ptform(p):
             xcopy = np.array(p)
             c0 = xcopy[0] * 6 + 20            # sample c0, which sets the mean location of DEM, on U[20, 26]
-            c1_5 = xcopy[1:5] * 20 + (-10)        # sample c1 through c5 on U[-10, 10] (can increase this)  
-            s = np.log10(xcopy[-1]) * 4 + -2     # sample log10(s) on U[-2, 2]               
+            c1_5 = xcopy[1:5] * 20 + (-10)        # sample c1 through c5 on U[-10, 10] (can increase this)
+            s = np.log10(xcopy[-1]) * 4 + -2     # sample log10(s) on U[-2, 2]
             xnew = np.hstack([c0, c1_5, s])
             return xnew
-        
+
         ndim = 6
         dsampler = DynamicNestedSampler(lnlike, ptform, ndim)
         dsampler.run_nested(wt_kwargs={'pfrac': 1.0})
@@ -673,13 +677,13 @@ class DEMModeling(object):
            Median of the EUV calculated per ion.
         dem_ions_hi : dictionary
            Upper error to the EUV calculated per ion.
-        """        
-        
+        """
+
         DEM_function_Trange = 10**self.linelist['EUV']['DEMUV']['Chebyshev']['Trange']
 
         for i in range(3):
             localdict = {}
-            
+
             DEM_function = 10**self.linelist['EUV']['DEMUV']['Chebyshev']['Fit'][i]
 
             for ion in self.G_T.keys():
@@ -687,7 +691,7 @@ class DEMModeling(object):
                 if ion=='ionTemp': continue
                 for c, center in enumerate(self.G_T[ion].keys()):
 
-                    if self.G_T[ion][center].shape == self.G_T['ionTemp'].shape: 
+                    if self.G_T[ion][center].shape == self.G_T['ionTemp'].shape:
                         ionTrange = self.G_T['ionTemp']
                     elif self.G_T[ion][center].shape == self.G_T['lineTemp'].shape:
                         ionTrange = self.G_T['lineTemp']
@@ -695,7 +699,7 @@ class DEMModeling(object):
                     G_T_interp = np.interp(DEM_function_Trange, ionTrange, self.G_T[ion][center])
                     integrand = G_T_interp * DEM_function
                     I_ul = sci.integrate.simps(integrand, DEM_function_Trange)
-                    
+
                     if ion not in localdict.keys():
                         localdict[ion] = {}
                         localdict[ion]['centers'] = []
@@ -729,12 +733,12 @@ class DEMModeling(object):
            Flux array for the modeled EUV spectrum.
         """
         wave, euv = np.array([]), np.array([])
-        
+
         for k in self.linelist['EUV']['DEMUV']['ions'].keys():
-            wave = np.append(wave, 
+            wave = np.append(wave,
                              self.linelist['EUV']['DEMUV']['ions'][k]['centers'])
             euv  = np.append(euv,
                              np.array(self.linelist['EUV']['DEMUV']['ions'][k]['log10SFline']))
-            
+
         self.euv_wave = wave + 0.0
         self.euv_flux = euv  + 0.0
