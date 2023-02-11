@@ -162,14 +162,14 @@ class TransitsWithCOS(object):
         self.error_table = et
 
 
-    def to_transit_phase(self, T_c):
+    def to_transit_phase(self, Tcenter, Tingress, Tegress):
         """
         Creates an array of the transit phase from the predicted transit times
         and the time array in this class.
 
         Parameters
         ----------
-        T_c : np.array
+        Tcenter : np.array
            Array of astropy.time.Time variables indicative of the predicted
            transit mid-point. Transit mid-points should be in time order.
 
@@ -192,7 +192,41 @@ class TransitsWithCOS(object):
         phase = np.zeros(len(self.time))
         for j in range(len(np.unique(visit))):
             q1 = visit == j
-            phase[q1]  = (self.time[q1] - T_c[j].mjd).value
+            phase[q1]  = (self.time[q1] - Tcenter[j].mjd).value
 
         self.phase = phase
         self.visit = visit
+
+        # Defines theh orbits in each visit
+        orbits = np.array([])
+        transit = np.zeros(len(orbits))
+
+        for i in range(len(np.unique(visit))):
+            q = (visit == i)
+            o = np.zeros(len(self.time[q]))
+            t = np.zeros(len(self.time[q]))
+
+            seps = np.where(np.diff(self.time[q]) > 0.01)[0] + 1
+            seps = np.append([0], seps)
+            seps = np.append(seps, len(self.time[q]))
+
+            t_i = Time(Tingress[i]).mjd
+            t_e = Time(Tegress[i]).mjd
+
+            time_chunk = self.time[q]
+
+            for j in range(len(seps)-1):
+                o[seps[j]:seps[j+1]] += j
+
+                if (i==3 and j < 3) or (i==4 and j<2):
+                    t[seps[j]:seps[j+1]] = 2
+
+            tt = np.where((self.time[q].value >= t_i) &
+                          (self.time[q].value <= t_e))[0]
+            t[tt] = 1
+
+            orbits = np.append(orbits, o)
+            transit = np.append(transit, t)
+
+        self.orbits = orbits
+        self.in_transit = transit
