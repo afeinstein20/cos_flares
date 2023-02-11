@@ -445,8 +445,7 @@ class FlaresWithCOS(object):
                           pars, x=time)
 
         return time, flux, flux_err, fmodel, init, out
-
-
+        
 
     def load_lsf_model(self, fname):
         """
