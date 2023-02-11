@@ -12,7 +12,8 @@ from scipy.interpolate import interp1d
 from astropy.table import Table, Column
 from lightkurve.lightcurve import LightCurve
 
-from utils import *
+import model_utils
+import spectral_utils
 
 __all__ = ['FlaresWithCOS']
 
@@ -114,14 +115,7 @@ class FlaresWithCOS(object):
         mid : float
            Where the velocity = 0.
         """
-        if mid == None:
-            mid = int(len(wave)/2)
-        else:
-            mid = np.where(wave>=mid)[0][0]
-        lambda0 = wave[mid] + 0.0
-        rv_m_s = ((wave - lambda0)/lambda0 * 3e8)*units.m/units.s
-        rv_km_s = rv_m_s.to(units.km/units.s)
-        return rv_km_s, mid
+        rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
 
 
     def measure_ew(self, ion=None, line=None, vmin=None, 
@@ -165,6 +159,7 @@ class FlaresWithCOS(object):
            lines are re-measured.
 
         """
+<<<<<<< Updated upstream
         if orbit != 'all':
             mask = np.where(self.orbit == orbit)[0]
         else:
@@ -209,6 +204,17 @@ class FlaresWithCOS(object):
             else:
                 self.error_table.replace_column(str(np.round(line,3)), errors)
         return
+=======
+        wt, et = spectral_utils.measure_ew(self.orbit, self.time, self.wavelength,
+                                           self.flux, self.flux_err,
+                                           self.line_table, ion=ion,
+                                           line=line, vmin=vmin, vmax=vmax,
+                                           orbit_num=orbit, binsize=binsize,
+                                           width_table=self.width_table,
+                                           error_table=self.error_table)
+        self.width_table = wt
+        self.error_table = et
+>>>>>>> Stashed changes
 
 
     def measure_FUV130(self):
@@ -404,12 +410,19 @@ class FlaresWithCOS(object):
         ### WHITE LIGHT MODEL ###
         ##########
         if model.lower() == 'white light':
+<<<<<<< Updated upstream
             
             fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
+=======
+
+            fmodel = Model(model_utils.flare_model,
+                           prefix='f{0:02d}_'.format(0))
+>>>>>>> Stashed changes
 
             if len(amp) > 1:
                 for i in range(1, len(amp)):
-                    fmodel += Model(flare_model, prefix='f{0:02d}_'.format(i))
+                    fmodel += Model(model_utils.flare_model,
+                                    prefix='f{0:02d}_'.format(i))
 
             pars = fmodel.make_params()
 
@@ -425,11 +438,19 @@ class FlaresWithCOS(object):
         ### SKEWED GAUSSIAN MODEL ###
         ##########
         elif model.lower() == 'skewed gaussian':
+<<<<<<< Updated upstream
             fmodel = Model(skewed_gaussian, prefix='f{0:02d}_'.format(0))
             
             if len(eta) > 1:
                 for i in range(1, len(eta)):
                     fmodel += Model(skewed_gaussian, prefix='f{0:02d}_'.format(i))          
+=======
+            fmodel = Model(model_utils.skewed_gaussian, prefix='f{0:02d}_'.format(0))
+
+            if len(eta) > 1:
+                for i in range(1, len(eta)):
+                    fmodel += Model(model_utils.skewed_gaussian, prefix='f{0:02d}_'.format(i))
+>>>>>>> Stashed changes
 
             pars = fmodel.make_params()
 
@@ -446,12 +467,19 @@ class FlaresWithCOS(object):
         ##########
         elif model.lower() == 'convolved':
 
-            fmodel = Model(convolved_model, prefix='f{0:02d}_'.format(0))
+            fmodel = Model(model_utils.convolved_model,
+                           prefix='f{0:02d}_'.format(0))
 
             if len(eta) > 1:
                 for i in range(1, len(eta)):
+<<<<<<< Updated upstream
                     fmodel += Model(convolved_model, prefix='f{0:02d}_'.format(i))
             
+=======
+                    fmodel += Model(model_utils.convolved_model,
+                                    prefix='f{0:02d}_'.format(i))
+
+>>>>>>> Stashed changes
             pars = fmodel.make_params()
 
             for i in range(len(eta)):
@@ -482,8 +510,11 @@ class FlaresWithCOS(object):
         return time, flux, flux_err, fmodel, init, out
         
 
+<<<<<<< Updated upstream
     
 
+=======
+>>>>>>> Stashed changes
 
     def load_lsf_model(self, fname):
         """
@@ -713,6 +744,3 @@ class FlaresWithCOS(object):
         func =  frac * 1.0/(np.exp(exp) - 1.0)
         func = func.to(self.flux_units)
         return np.log10(func.value)*scaling
-
-
-#    def fit_blackbody(self)
