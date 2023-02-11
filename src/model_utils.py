@@ -4,11 +4,9 @@ from lmfit.models import Model
 from astropy.table import Table
 from astropy import units, constants
 
-__all__ = ['load_data', 'load_binned_data', 'load_table', 
-           'blackbody', 'load_inferno', 'build_lmfit',
-           'flare_model', 'gaussian', 'skewed_gaussian',
-           'multi_peaks', 'convolved_model']
-
+__all__ = ['load_data', 'load_binned_data', 'load_table',
+           'build_lmfit', 'flare_model', 'gaussian',
+           'skewed_gaussian', 'multi_peaks', 'convolved_model']
 
 def load_data(fname='/Users/arcticfox/Documents/AUMic/reduced/data.npy'):
     """ Returns wavelength, flux, orbits.
@@ -29,25 +27,6 @@ def load_table(fname='/Users/arcticfox/Documents/AUMic/reduced/ew.tab'):
 def measure_linewidth(wavelength, flux, error, line):
     """ Measures the equivalent width of the line
     """
-
-def load_inferno(n=10, colormap='inferno'):
-    """ Returns a discrete colormap with n values.
-    """
-    from pylab import cm
-    import matplotlib
-    
-    cmap = cm.get_cmap(colormap, n)
-    colors = []
-    for i in range(cmap.N):
-        rgb = cmap(i)[:3]
-        colors.append(matplotlib.colors.rgb2hex(rgb))
-    colors = np.array(colors)[1:-1]
-    return colors
-
-def blackbody(wavelength, T):
-    frac = (2 * constants.h * constants.c**2)/wavelength**5
-    e = (constants.h*constants.c)/(wavelength*constants.k_B*T)
-    return frac * 1/(np.exp(e)-1)
 
 def gaussian(x, mu, std, f):#, lsf):
     """ A gaussian model. """
@@ -116,28 +95,28 @@ def build_lmfit(x, lsf, params, std=0):
 
 
 def flare_model(x, amp, t0, rise, decay, offset_g, offset_e):
-        """           
+        """
         Models the flare with an array of times (for double-peaked
-        events). Uses the standard model of a Gaussian rise and   
+        events). Uses the standard model of a Gaussian rise and
         exponential decay.
 
         Parameters
         ----------
         x : np.array
            Time array to fit the data to.
-        amp : float 
+        amp : float
            Amplitude of flare.
-        t0 : float  
-           T0 of flare.           
-        rise : float   
+        t0 : float
+           T0 of flare.
+        rise : float
            Gaussian rise factor for flare.
-        decay : float                    
+        decay : float
            Exponential decay factor for flare.
 
         Returns
         -------
         model : np.array
-           Flare model. 
+           Flare model.
         """
         gr = np.zeros(len(x))
         ed = np.zeros(len(x))
@@ -158,16 +137,16 @@ def build_lmfit_flare(x, params, std=0):
     """
     Builds the flare model using the output parameters from
     lmfit.
-    
+
     Parameters
     ----------
     x : np.array
        X-axis (probably time).
     params : lmfit.parameter.Parameters
-    nflares : 
-    std : int, optional 
+    nflares :
+    std : int, optional
        Key to build a +/- 1 std model. Default is 0 (returns
-       best_fit). Other options = +1 (1 std model) or -1 (-1  
+       best_fit). Other options = +1 (1 std model) or -1 (-1
        std model).
 
     Returns
@@ -203,14 +182,14 @@ def multi_peaks(ttest, test):
     """
 
     p1 = np.argmax(test)
-    
+
     try:
         arg = np.where((ttest.value>ttest[p1].value+100))[0]
         p2 = np.argmax(test[arg])
     except:
         arg=np.arange(0,len(ttest),1,dtype=int)
         p2=0
-        
+
     try:
         arg3 = np.where((ttest.value>ttest[arg][p2].value+100))[0]
         p3 = np.argmax(test[arg3])
@@ -218,7 +197,7 @@ def multi_peaks(ttest, test):
     except:
         arg3=np.arange(0,len(ttest),1,dtype=int)
         p3=0
-        
+
     t0 = np.array([ttest[p1].value, ttest[arg][p2].value, ttest[arg3][p3].value])
     amp = np.array([test[p1], test[arg][p2], test[arg3][p3]])#/1e-13
 
