@@ -1,4 +1,20 @@
+import numpy as np
+from pylab import cm
+import matplotlib
 import matplotlib.pyplot as plt
+
+__all__ = ['load_inferno', 'make_onerow']
+
+def load_inferno(n=10, colormap='inferno'):
+    """ Returns a discrete colormap with n values.
+    """
+    cmap = cm.get_cmap(colormap, n)
+    colors = []
+    for i in range(cmap.N):
+        rgb = cmap(i)[:3]
+        colors.append(matplotlib.colors.rgb2hex(rgb))
+    colors = np.array(colors)[1:-1]
+    return colors
 
 def make_onerow():
     """
