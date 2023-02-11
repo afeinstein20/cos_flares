@@ -1,16 +1,11 @@
 import os, sys
 import numpy as np
 from astropy import units
-from astropy.io import fits
+from astropy.time import Time
 from astropy import constants
-from lmfit.models import Model
 import matplotlib.pyplot as plt
-from scipy.signal import gaussian
-from scipy.signal import find_peaks
-from scipy.optimize import minimize
 from scipy.interpolate import interp1d
 from astropy.table import Table, Column
-from lightkurve.lightcurve import LightCurve
 
 import spectral_utils
 
@@ -21,7 +16,7 @@ class TransitsWithCOS(object):
     A class to analyze transits as observed with Hubble/COS.
     """
     def __init__(self, wavelength, flux, flux_err, time,
-                 orbit, time_unit=units.s):
+                 orbit):
         """
         Initializes the class.
 
@@ -50,7 +45,7 @@ class TransitsWithCOS(object):
         self.wavelength = wavelength+0.0
         self.flux = flux + 0.0
         self.flux_err = flux_err+0.0
-        self.time = time * time_unit
+        self.time = Time(time, format='mjd')
         self.orbit = orbit
         self.line_table = None
         self.width_table = Table()
@@ -82,6 +77,37 @@ class TransitsWithCOS(object):
            Where the velocity = 0.
         """
         rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
+
+    def load_line_table(self, path, fname='line_table.txt',
+                        format='csv', comment='#'):
+        """
+        Loads in a table of lines. Table is organized
+        as ion, central wavelength (AA),
+        the minimum velocity of the line (vmin; km/s),
+        and
+        the maximum velocity of the line (vmax; km/s).
+
+        Parameters
+        ----------
+        path : str
+           Where the line table is stored.
+        fname : str, optional
+           The name of the line table. Default is
+           `line_table.txt`.
+        format : str, optional
+           The format the table is stored in. Default
+           is `csv`.
+        comment : str, optional
+           If comments are present in the table, provide the
+           string identifier. Default is `#`.
+
+        Attributes
+        ----------
+        line_table : astropy.table.Table
+        """
+        self.line_table = Table.read(os.path.join(path, fname),
+                                     format=format,
+                                     comment=comment)
 
 
     def measure_ew(self, ion=None, line=None, vmin=None,
@@ -134,3 +160,39 @@ class TransitsWithCOS(object):
                                            error_table=self.error_table)
         self.width_table = wt
         self.error_table = et
+
+
+    def to_transit_phase(self, T_c):
+        """
+        Creates an array of the transit phase from the predicted transit times
+        and the time array in this class.
+
+        Parameters
+        ----------
+        T_c : np.array
+           Array of astropy.time.Time variables indicative of the predicted
+           transit mid-point. Transit mid-points should be in time order.
+
+        Attributes
+        ----------
+        visit : np.array
+           Array of integers assigned to each visit in the data set.
+        phase : np.array
+           Array of transit phases.
+        """
+        inds = np.where(np.diff(self.time.value) > 10)[0]
+
+        visit = np.zeros(len(self.time))
+        inds = np.append([0], inds)
+        inds = np.append(inds, [len(self.time)])
+
+        for i in range(len(inds)-1):
+            visit[inds[i]+1:inds[i+1]+1] = i
+
+        phase = np.zeros(len(self.time))
+        for j in range(len(np.unique(visit))):
+            q1 = visit == j
+            phase[q1]  = (self.time[q1] - T_c[j].mjd).value
+
+        self.phase = phase
+        self.visit = visit
