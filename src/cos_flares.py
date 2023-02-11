@@ -38,9 +38,9 @@ class FlaresWithCOS(object):
            An array of errors on each flux point. Should be
            the same shape as the wavelength and flux arrays.
         time : np.array
-           An array of times per each spectra. Should be the 
+           An array of times per each spectra. Should be the
            same length as the wavelength, flux, and flux_err
-           arrays. 
+           arrays.
         orbit : np.array
            An array of which orbit each specta was observed
            in.
@@ -66,8 +66,8 @@ class FlaresWithCOS(object):
                         format='csv', comment='#'):
         """
         Loads in a table of lines. Table is organized
-        as ion, central wavelength (AA), 
-        the minimum velocity of the line (vmin; km/s), 
+        as ion, central wavelength (AA),
+        the minimum velocity of the line (vmin; km/s),
         and
         the maximum velocity of the line (vmax; km/s).
 
@@ -82,7 +82,7 @@ class FlaresWithCOS(object):
            The format the table is stored in. Default
            is `csv`.
         comment : str, optional
-           If comments are present in the table, provide the 
+           If comments are present in the table, provide the
            string identifier. Default is `#`.
 
         Attributes
@@ -90,12 +90,12 @@ class FlaresWithCOS(object):
         line_table : astropy.table.Table
         """
         self.line_table = Table.read(os.path.join(path, fname),
-                                     format=format, 
+                                     format=format,
                                      comment=comment)
 
 
     def to_velocity(self, wave, mid=None):
-        """ 
+        """
         Converts wavelength to velocity space given some
         reference wavelength.
 
@@ -118,7 +118,7 @@ class FlaresWithCOS(object):
         rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
 
 
-    def measure_ew(self, ion=None, line=None, vmin=None, 
+    def measure_ew(self, ion=None, line=None, vmin=None,
                    vmax=None, orbit='all', binsize=3):
         """
         Measures the equivalent width of a given line. Either the
@@ -146,12 +146,12 @@ class FlaresWithCOS(object):
            Accounts for binning in the error calculation.
            If the data is not binned, use binsize=1. Default
            is 3.
-        
+
         Attributes
         ----------
         width_table : astropy.table.Table
            Adds a column of measured equivalent widths to the
-           attribute width_table. Columns are replaced when 
+           attribute width_table. Columns are replaced when
            lines are re-measured.
         error_table : astropy.table.Table
            Adds a column of equivalent width errors to the
@@ -159,52 +159,6 @@ class FlaresWithCOS(object):
            lines are re-measured.
 
         """
-<<<<<<< Updated upstream
-        if orbit != 'all':
-            mask = np.where(self.orbit == orbit)[0]
-        else:
-            mask = np.arange(0,len(self.orbit),1,dtype=int)
-
-        if ion is not None and self.line_table is not None:
-            line = self.line_table[self.line_table['ion']==ion]['wave_c']+0.0
-            vmin = self.line_table[self.line_table['ion']==ion]['vmin']+0.0
-            vmax = self.line_table[self.line_table['ion']==ion]['vmax']+0.0
-        elif ion is not None and self.line_table is None:
-            return('No table found. Please load the line table first with self.load_line_table().')
-
-        widths = np.zeros(len(self.time[mask]))
-        errors = np.zeros(len(self.time[mask]))
-
-        for i,x in enumerate(mask):
-            v, _ = self.to_velocity(self.wavelength[x], mid=line)
-            reg = np.where( (v.value >= vmin) & (v.value <= vmax) )[0]
-            
-            widths[i] = np.nansum(self.flux[x][reg])
-            errors[i] = np.sqrt(np.nansum(self.flux_err[x][reg]**2))
-
-        try:
-            if ion is not None:
-                self.width_table.add_column(Column(widths, ion))
-            else:
-                self.width_table.add_column(Column(widths, str(np.round(line,3))))
-        except ValueError:
-            if ion is not None:
-                self.width_table.replace_column(ion, widths)
-            else:
-                self.width_table.replace_column(str(np.round(line,3)), widths)
-
-        try:
-            if ion is not None:
-                self.error_table.add_column(Column(errors, ion))
-            else:
-                self.error_table.add_column(Column(errors, str(np.round(line,3))))
-        except ValueError:
-            if ion is not None:
-                self.error_table.replace_column(ion, errors)
-            else:
-                self.error_table.replace_column(str(np.round(line,3)), errors)
-        return
-=======
         wt, et = spectral_utils.measure_ew(self.orbit, self.time, self.wavelength,
                                            self.flux, self.flux_err,
                                            self.line_table, ion=ion,
@@ -214,13 +168,12 @@ class FlaresWithCOS(object):
                                            error_table=self.error_table)
         self.width_table = wt
         self.error_table = et
->>>>>>> Stashed changes
 
 
     def measure_FUV130(self):
         """
         Integrates the FUV130 flux, as defined in Parke Loyd et al. (2018).
-        
+
         Attributes
         ----------
         fuv130 : np.ndarray
@@ -230,13 +183,13 @@ class FlaresWithCOS(object):
         fuv130_err = np.zeros(len(self.time.value))
 
         for i in range(len(self.wavelength)):
-            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1197)) | 
+            mask = np.where( ((self.wavelength[i] >= 1173.65) & (self.wavelength[i] <= 1197)) |
                              ((self.wavelength[i] >= 1230) & (self.wavelength[i] <= 1274.04)) |
                              ((self.wavelength[i] >= 1329.25) & (self.wavelength[i] <= 1355.49)) )[0]
-                             
+
 
             fuv130[i] = np.nansum(self.flux[i][mask])
-            
+
             fuv130_err[i] = np.sqrt(np.nansum(self.flux_err[i][mask]**2) / len(mask))
 
         self.fuv130 = fuv130 * self.flux_units * units.AA
@@ -293,7 +246,7 @@ class FlaresWithCOS(object):
         ----------
         d : astropy.units.Unit
            The distance to the star with the corresponding distance
-           units. 
+           units.
         mask : np.array, optional
            A mask for what region to calculate the flux. Default is None.
            If the mask is None, it will calculate the flux in regions
@@ -311,9 +264,9 @@ class FlaresWithCOS(object):
             mask = self.continuum_mask[0] == 0
 
         sed = np.zeros(len(self.flux))
-            
+
         for i in range(len(self.flux)):
-            eng = np.trapz(self.flux[i][mask]*self.flux_units, 
+            eng = np.trapz(self.flux[i][mask]*self.flux_units,
                            x=self.wavelength[i][mask]*units.AA) * 4 * np.pi * d**2
             eng = eng.to(units.erg/units.s)
             sed[i] = eng.value
@@ -321,17 +274,17 @@ class FlaresWithCOS(object):
         return sed
 
 
-    def fit_flare(self, ion, mask, model='white light', 
-                  amp=None, t0=None, decay=None, rise=None, 
+    def fit_flare(self, ion, mask, model='white light',
+                  amp=None, t0=None, decay=None, rise=None,
                   eta=None, omega=None, alpha=None, offset=None,
                   x=None, y=None, yerr=None):
         """
         Fits a flare model to the data. There are two model options available:
         1. Flare model from Davenport et al. (2016) : Gaussian rise + exponential
         decay. This model requires parameters: amp, t0, decay, rise.
-        2. Skewed Gaussian distribution (this work). This model requires 
+        2. Skewed Gaussian distribution (this work). This model requires
         parameters: eta, omega, alpha.
-        
+
         This function can fit multi-peaked flare events. Do this by setting
         the parameters to arrays of length N, where N is the number of flares
         you wish to fit.
@@ -354,23 +307,23 @@ class FlaresWithCOS(object):
            in the flux array.
         t0: np.array, optional
            A first guess at the peak time of each flare for the flare
-           model. Should be of length `nflares`. Default is None. 
-           If None, will take the time of maximum value in the flux 
+           model. Should be of length `nflares`. Default is None.
+           If None, will take the time of maximum value in the flux
            array.
         decay : np.array, optional
            A first guess at the decay scaling factor for each flare.
            Should be of length `nflares`. Default is None. If None,
            will populate an array of values = 0.1.
-        eta : np.array, optional               
+        eta : np.array, optional
            A first guess at the peak time of the flare (i.e. the mean
            of the distribution). Default is None. If None, will take the
-           time of maximum value in the flux array.                     
-        omega : np.array, optional                                      
+           time of maximum value in the flux array.
+        omega : np.array, optional
            The scale of the Gaussian distribution. Default is None. If
-           None, will scale to the maximum flux value in the array.   
-        alpha : np.array, optional                                
+           None, will scale to the maximum flux value in the array.
+        alpha : np.array, optional
            Skewness of the distribution. Default is None. If None, will
-           test skew values of alpha > 0.      
+           test skew values of alpha > 0.
 
         Returns
         -------
@@ -389,35 +342,30 @@ class FlaresWithCOS(object):
         #if x is not None and y is None:
         #    finterp = interp1d(time, flux)
         #    flux = finterp(x)
-            
+
         #    einterp = interp1d(time, flux_err)
         #    flux_err = einterp(x)
-            
+
         if x is not None:
             time = x + 0.0
         if y is not None:
             flux = y + 0.0
         if yerr is not None:
-            flux_err = yerr + 0.0 
+            flux_err = yerr + 0.0
 
         if offset is None:
             if model.lower() == 'white light':
                 offset = np.full(len(amp), 0)
             else:
                 offset = np.full(len(eta), 0)
-        
+
         ##########
         ### WHITE LIGHT MODEL ###
         ##########
         if model.lower() == 'white light':
-<<<<<<< Updated upstream
-            
-            fmodel = Model(flare_model, prefix='f{0:02d}_'.format(0))
-=======
 
             fmodel = Model(model_utils.flare_model,
                            prefix='f{0:02d}_'.format(0))
->>>>>>> Stashed changes
 
             if len(amp) > 1:
                 for i in range(1, len(amp)):
@@ -433,24 +381,17 @@ class FlaresWithCOS(object):
                 pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
                 pars['f{0:02d}_offset_g'.format(i)].set(value=0, min=-1, max=10)
                 pars['f{0:02d}_offset_e'.format(i)].set(value=0, min=-1, max=10)
-          
+
         ##########
         ### SKEWED GAUSSIAN MODEL ###
         ##########
         elif model.lower() == 'skewed gaussian':
-<<<<<<< Updated upstream
-            fmodel = Model(skewed_gaussian, prefix='f{0:02d}_'.format(0))
-            
-            if len(eta) > 1:
-                for i in range(1, len(eta)):
-                    fmodel += Model(skewed_gaussian, prefix='f{0:02d}_'.format(i))          
-=======
+
             fmodel = Model(model_utils.skewed_gaussian, prefix='f{0:02d}_'.format(0))
 
             if len(eta) > 1:
                 for i in range(1, len(eta)):
                     fmodel += Model(model_utils.skewed_gaussian, prefix='f{0:02d}_'.format(i))
->>>>>>> Stashed changes
 
             pars = fmodel.make_params()
 
@@ -472,14 +413,10 @@ class FlaresWithCOS(object):
 
             if len(eta) > 1:
                 for i in range(1, len(eta)):
-<<<<<<< Updated upstream
-                    fmodel += Model(convolved_model, prefix='f{0:02d}_'.format(i))
-            
-=======
+
                     fmodel += Model(model_utils.convolved_model,
                                     prefix='f{0:02d}_'.format(i))
 
->>>>>>> Stashed changes
             pars = fmodel.make_params()
 
             for i in range(len(eta)):
@@ -492,7 +429,7 @@ class FlaresWithCOS(object):
                 pars['f{0:02d}_{1}'.format(i, 't0')].set(value=t0[i], min=np.nanmin(time), max=np.nanmax(time))
                 pars['f{0:02d}_{1}'.format(i, 'rise')].set(value=rise[i], min=0.001, max=100)
                 pars['f{0:02d}_{1}'.format(i, 'decay')].set(value=decay[i], min=0.001, max=300)
-                
+
                 pars['f{0:02d}_{1}'.format(i, 'offset')].set(value=0, min=-1, max=10)
 
 
@@ -506,15 +443,10 @@ class FlaresWithCOS(object):
 
         out  = fmodel.fit(flux,
                           pars, x=time)
-        
+
         return time, flux, flux_err, fmodel, init, out
-        
 
-<<<<<<< Updated upstream
-    
 
-=======
->>>>>>> Stashed changes
 
     def load_lsf_model(self, fname):
         """
@@ -525,7 +457,7 @@ class FlaresWithCOS(object):
         ----------
         fname : str
            The path + name of the line spread function file.
-        
+
         Attributes
         ----------
         lsf_table : astropy.table.Table
@@ -534,7 +466,7 @@ class FlaresWithCOS(object):
         """
 
         lsf = Table.read(fname, format='ascii')
-        
+
         lsf_table = Table()
 
         for key in lsf.colnames:
@@ -558,7 +490,7 @@ class FlaresWithCOS(object):
         ion : str
            The ion in the line list to fit a line to.
         mask : np.ndarray
-           A mask for the out-of-flare observations to create a 
+           A mask for the out-of-flare observations to create a
            template from.
         shape : str, optional
            The profile shape to convolve with the line spread
@@ -570,9 +502,9 @@ class FlaresWithCOS(object):
            The number of Gaussians used to fit the profile. Default is 1.
         x0 : np.ndarray, optional
            The list of initial guesses for each Gaussian model. x0 should
-           be of shape (ngauss,4), where the 4 entries are: 
+           be of shape (ngauss,4), where the 4 entries are:
            mu (mean), std (standard deviation), sf (Gaussian scaling factor),
-           scale (additional scaling factor). Default is 
+           scale (additional scaling factor). Default is
            x0 = [0, 20, 14, 4].
         default_bounds : np.ndarray, optional
            The list of bounds to use in the scipy.optimize.minimize function.
@@ -585,9 +517,9 @@ class FlaresWithCOS(object):
             nonlocal lsf
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
-            g = f / denom * np.exp(exp) 
+            g = f / denom * np.exp(exp)
             return np.convolve(lsf, g, 'same')# + off
-        
+
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
         vmax = self.line_table[self.line_table['ion']==ion]['vmax'][0]
@@ -607,8 +539,8 @@ class FlaresWithCOS(object):
             lsf /= np.nanmax(lsf)
 
             # interpolate line spread function to same length as line profile #
-            ivel = np.linspace(velocity[reg][0], 
-                               velocity[reg][-1], 
+            ivel = np.linspace(velocity[reg][0],
+                               velocity[reg][-1],
                                len(lsf))
             lsf_interp = interp1d(ivel, lsf)
             lsf = lsf_interp(velocity[reg]) + 0.0
@@ -620,7 +552,7 @@ class FlaresWithCOS(object):
         if ferr is None:
             ferr = np.sqrt(np.nansum(self.flux_err[mask,:]**2,axis=0))/len(self.flux[mask,:])
         ferr = ferr[reg] + 0.0
-            
+
         vel = velocity[reg] + 0.0
 
         for i in range(ngauss):
@@ -651,7 +583,7 @@ class FlaresWithCOS(object):
 
         init = gmodel.eval(pars, x=vel)
         out = gmodel.fit(f,
-                         pars, 
+                         pars,
                          x=vel,
                          weights=1.0/ferr,
                          verbose=True,
@@ -661,7 +593,7 @@ class FlaresWithCOS(object):
 
     def new_lines(self, template, distance=150, prominence=None):
         """
-        Marks peaks in a spectrum that are defined as `peaks` by 
+        Marks peaks in a spectrum that are defined as `peaks` by
         scipy.signal.find_peaks. This function can be used to find new
         emission lines that may have appeared in-flare.
 
@@ -670,28 +602,28 @@ class FlaresWithCOS(object):
         template : array
            The spectrum used to identify peaks in.
         distance : array or int, optional
-           Required minimal horizontal distance in samples between 
+           Required minimal horizontal distance in samples between
            neighboring peaks. Default is 150.
         prominance: array or int, optional
            Required prominence of peaks. If a list is passed in, the
            first element is interpreted as the minimal and the second,
            if supplied, as the maximal required prominence. Default
            is None.
-        
+
         Returns
         -------
         peaks : np.array
            Array of args to where peaks in the data are identified.
-        """        
+        """
         peaks, _ = find_peaks(template, distance=distance, prominence=prominence)
         return peaks
 
 
     def identify_continuum(self):
         """
-        Identifies region of the continuum (i.e. there are no strong 
+        Identifies region of the continuum (i.e. there are no strong
         emission features) in order to build a spectral energy distribution.
-        
+
         Attributes
         ----------
         contiuum_mask : np.ndarray
@@ -700,13 +632,13 @@ class FlaresWithCOS(object):
         """
         cont = np.array([ [1067.506, 1070.062], [1074.662, 1076.533], [1078.881, 1082.167],
                           [1087.828, 1090.035], [1103.787, 1107.862], [1110.500, 1112.946],
-                          [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923], 
-                          [1140.873, 1145.141], [1146.285, 1151.544], [1152.602, 1155.579], 
-                          [1159.276, 1163.222], [1164.565, 1173.959], [1178.669, 1188.363], 
-                          [1195.162, 1196.864], 
+                          [1113.618, 1117.377], [1119.548, 1121.622], [1125.255, 1126.923],
+                          [1140.873, 1145.141], [1146.285, 1151.544], [1152.602, 1155.579],
+                          [1159.276, 1163.222], [1164.565, 1173.959], [1178.669, 1188.363],
+                          [1195.162, 1196.864],
                           #[1201.748, 1203.862], [1227.056, 1236.921],
-                          [1262.399, 1263.967], [1268.559, 1273.974], [1281.396, 1287.493], 
-                          [1290.494, 1293.803], [1307.064, 1308.703], [1319.494, 1322.910], 
+                          [1262.399, 1263.967], [1268.559, 1273.974], [1281.396, 1287.493],
+                          [1290.494, 1293.803], [1307.064, 1308.703], [1319.494, 1322.910],
                           [1330.349, 1332.884], [1337.703, 1341.813], [1341.116, 1350.847] ])
         cont_inds = np.ones(self.wavelength.shape, dtype=int)
 
@@ -718,7 +650,7 @@ class FlaresWithCOS(object):
 
         self.continuum_mask = cont_inds
 
-        
+
     def blackbody(self, x, T, scaling):
         """
         Blackbody equation in wavelength.
@@ -731,7 +663,7 @@ class FlaresWithCOS(object):
            Temperature of the blackbody.
         scaling : float
            Scaling the flux to the blackbody.
-        
+
         Returns
         -------
         bb : np.ndarray
