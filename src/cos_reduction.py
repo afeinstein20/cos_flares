@@ -17,7 +17,7 @@ class cosReduce(object):
     and split them via time-tag markers (and do
     other things).
     """
-    
+
     def __init__(self, rootname, input_path):
         """
         Initializes the class to reduce your COS data.
@@ -59,12 +59,12 @@ class cosReduce(object):
         self.binned_flux_err = None
 
 
-    def split_corrtag(self, output_path, increment=30, 
+    def split_corrtag(self, output_path, increment=30,
                       starttime=None, endtime=None, time_list=None):
         """
         Splits the Hubble COS observations based on
         time the photons hit the detector. Files will be saved
-        as FITS files with the naming convention of 
+        as FITS files with the naming convention of
         `split_[rootname]_[n].fits`.
 
         Parameters
@@ -89,24 +89,24 @@ class cosReduce(object):
         splittag_path : str
            The path to where the splittag data is saved.
         """
-        
+        print(self.rootname, self.input_path)
         for i in range(len(self.rootname)):
             corrtag_a = os.path.join(self.input_path,
                                      '{}_corrtag_a.fits'.format(self.rootname[i]))
             corrtag_b = os.path.join(self.input_path,
                                      '{}_corrtag_b.fits'.format(self.rootname[i]))
-        
+
 
             splittag.splittag(corrtag_a, os.path.join(output_path,
                                                       'split_{}'.format(self.rootname[i])),
                               increment=increment, starttime=starttime,
                               endtime=endtime, time_list=time_list)
-            
+
             splittag.splittag(corrtag_b, os.path.join(output_path,
                                                       'split_{}'.format(self.rootname[i])),
                               increment=increment, starttime=starttime,
                               endtime=endtime, time_list=time_list)
-                              
+
         self.splittag_path = output_path
 
 
@@ -151,7 +151,7 @@ class cosReduce(object):
                             all_files.append(hdu[0].header[ft])
                     except:
                         pass
-                        
+
                 hdu.close()
 
         if path is None:
@@ -167,9 +167,14 @@ class cosReduce(object):
             return needed_files
         else:
             return("You have all reference files needed!")
-            
 
+<<<<<<< Updated upstream
     def reduce_data(self, output_path):
+=======
+
+    def reduce_data(self, output_path, component='a', split_files=None,
+                    save_space=False):
+>>>>>>> Stashed changes
         """
         Uses the calcos package to reduce new data.
 
@@ -179,6 +184,9 @@ class cosReduce(object):
            Where the output reduced data should be stored.
            This will create a subdirectory `a` and `b` when
            necessary.
+        save_space : bool, optional
+           Will delete unnecessary files to save storage space while reducing
+           COS data. Default is False.
 
         Attributes
         ----------
@@ -187,10 +195,13 @@ class cosReduce(object):
         path_a : str
            Where the reduced corrtag_a output files are stored.
         path_b : str
-           Where the reduced corrtag_b output files are stored.
+           Where the reduced corrtag_b output files are stored
         """
         path_a = os.path.join(output_path, 'a')
         path_b = os.path.join(output_path, 'b')
+
+        saved_exts = ['_flt_b.fits', '_flt_a.fits', '_corrtag_a.fits',
+                      '_corrtag_b.fits', '_counts_a.fits', '_counts_b.fits']
 
         if os.path.exists(output_path):
             if not os.path.exists(path_a):
@@ -205,19 +216,44 @@ class cosReduce(object):
                 os.mkdir(path_b)
             except OSError:
                 return("Couldn't find or create the output_path.")
+<<<<<<< Updated upstream
                          
         for letter in ['a', 'b']:
+=======
+
+        if type(component) == str:
+            component = [component]
+
+        for letter in component:
+>>>>>>> Stashed changes
             if letter == 'a':
                 outdir = path_a
             else:
                 outdir = path_b
-            split_files = np.unique(np.sort([os.path.join(self.splittag_path, i)
-                                             for i in os.listdir(self.splittag_path)
-                                             if i.endswith('{}.fits'.format(letter))]))
-            for f in tqdm(range(len(split_files))):
-                calcos.calcos(split_files[f], verbosity=0,
-                              outdir=outdir)
 
+            if split_files is None:
+                split_files = np.unique(np.sort([os.path.join(self.splittag_path, i)
+                                                 for i in os.listdir(self.splittag_path)
+                                                 if i.endswith('{}.fits'.format(letter))]))
+            for f in tqdm(range(len(split_files))):
+                lead = '_'.join(e for e in
+                                split_files[f].split('/')[-1].split('_')[:3])
+                if os.path.exists(os.path.join(outdir, lead+'_x1d.fits')) == True:
+                    pass
+                else:
+                    try:
+                        calcos.calcos(split_files[f], verbosity=0,
+                                      outdir=outdir)
+                        if save_space == True:
+                            lead = '_'.join(e for e in
+                                            split_files[f].split('/')[-1].split('_')[:3])
+                            for ext in saved_exts:
+                                try:
+                                    os.remove(os.path.join(outdir, lead+ext))
+                                except FileNotFoundError:
+                                    pass
+                    except RuntimeError:
+                        pass
         self.path_a = path_a
         self.path_b = path_b
         self.reduced_path = output_path
@@ -226,13 +262,13 @@ class cosReduce(object):
     def bookkeeping(self):
         """
         Does minor tasks like renaming the files such that they are ordered in
-        time properly, creates an array of corresponding orbit numbers, and 
+        time properly, creates an array of corresponding orbit numbers, and
         creates an array of times.
 
         Attributes
         ----------
         orbit : np.array
-           Array of orbit values, indexing at 0. 
+           Array of orbit values, indexing at 0.
         times : np.array
            Array of times extracted from FITS headers.
         """
@@ -253,7 +289,7 @@ class cosReduce(object):
 
 
     def fix_naming(self, path):
-        """ 
+        """
         Fixes the naming convention of the calcos files.
 
         Parameters
@@ -262,7 +298,7 @@ class cosReduce(object):
            The path where the output calcos files are stored. This function
            only renames the `x1d.fits` files.
         """
-        files = [os.path.join(path, i) for i in 
+        files = [os.path.join(path, i) for i in
                  os.listdir(path) if i.endswith('x1d.fits')]
         new, cp = [], []
 
@@ -279,12 +315,12 @@ class cosReduce(object):
             for i in range(len(new)):
                 os.replace(cp[i], new[i])
         return
-                  
-        
+
+
     def add_orbits(self, files):
-        """ 
+        """
         Creates an array of affiliated orbit values.
-        
+
         Parameters
         ----------
         files : np.array
@@ -316,7 +352,7 @@ class cosReduce(object):
         ----------
         files : np.array
            Array of file names.
-           
+
         Attributes
         ----------
         times : np.array
@@ -338,7 +374,7 @@ class cosReduce(object):
 
     def interpolate(self, path=None, offset=0.0):
         """
-        Interpolates the 1D spectra onto the same wavelength grid for an 
+        Interpolates the 1D spectra onto the same wavelength grid for an
         easier comparison.
 
         Parameters
@@ -346,7 +382,7 @@ class cosReduce(object):
         path : str, optional
            Path to where the `x1d.fits` files are stored.
            Default is `self.path_a`.
-        
+
         Attributes
         ----------
         wavelength : np.ndarray
@@ -370,6 +406,7 @@ class cosReduce(object):
 
         for i in range(len(fn)):
             x1ddata = fits.getdata(fn[i])
+<<<<<<< Updated upstream
             
             wavelength = np.concatenate((x1ddata["wavelength"][1],
                                          x1ddata["wavelength"][0])) + offset
@@ -377,6 +414,23 @@ class cosReduce(object):
                                    x1ddata["flux"][0]))
             err = np.concatenate((x1ddata["error"][1],
                                   x1ddata["error"][0]))
+=======
+
+            print(fn[i])
+            print(x1ddata["wavelength"][1][0], x1ddata["wavelength"][0][0])
+
+            try:
+                wavelength = np.concatenate((x1ddata["wavelength"][1],
+                                             x1ddata["wavelength"][0])) + offset
+                flux = np.concatenate((x1ddata["flux"][1],
+                                       x1ddata["flux"][0]))
+                err = np.concatenate((x1ddata["error"][1],
+                                      x1ddata["error"][0]))
+            except:
+                wavelength = x1ddata["wavelength"][0] + offset
+                flux = x1ddata["flux"][0] + 0.0
+                err  = x1ddata["error"][0]+ 0.0
+>>>>>>> Stashed changes
 
             if i == 0:
                 all_wave = np.zeros((len(fn), len(wavelength)))
@@ -392,10 +446,10 @@ class cosReduce(object):
         interp_flux = np.zeros((len(fn), length-2))
         interp_err = np.zeros((len(fn), length-2))
 
-        finer_wavelength = np.flip(np.logspace(np.log10(np.nanmin(all_wave[:,-1])), 
+        finer_wavelength = np.flip(np.logspace(np.log10(np.nanmin(all_wave[:,-1])),
                                                np.log10(np.nanmax(all_wave[:,0])),
                                                length, base=10.0))[1:-1]
-        
+
         for i in range(len(all_flux)):
             f = interp1d(all_wave[i], all_flux[i])
             interp_flux[i] = f(finer_wavelength)+0.0
@@ -405,7 +459,7 @@ class cosReduce(object):
         self.wavelength = all_wave + 0.0
         self.flux = all_flux + 0.0
         self.flux_err = all_flux_err + 0.0
-        
+
         self.interp_wavelength = np.full(interp_flux.shape, finer_wavelength)
         self.interp_flux = interp_flux + 0.0
         self.interp_flux_err = interp_err + 0.0
@@ -413,18 +467,18 @@ class cosReduce(object):
 
     def bin(self, binsize=3, type='interpolated'):
         """
-        Bins the wavelength, flux, and flux error arrays 
+        Bins the wavelength, flux, and flux error arrays
         by a given binsize.
 
         Parameters
         ----------
         binsize : int, optional
-           The binsize by which to bin the data. Default 
+           The binsize by which to bin the data. Default
            is 3.
         type : str, optional
            Which flux to bin. Default is `interpolated`.
            The other option is `normal`.
-           
+
         Attributes
         ----------
         binned_wavelength : np.ndarray
@@ -444,7 +498,7 @@ class cosReduce(object):
             e = self.flux_err + 0.0
         else:
             return('Flux type not implemented.')
-        
+
         for i in tqdm(range(len(f))):
             lk = LightCurve(time=w[i],
                             flux=f[i],
@@ -454,7 +508,7 @@ class cosReduce(object):
                 bw = np.zeros((len(f),len(lk.time.value)))
                 bf = np.zeros((len(f),len(lk.time.value)))
                 be = np.zeros((len(f),len(lk.time.value)))
-                
+
             bw[i] = lk.time.value + 0.0
             bf[i] = lk.flux.value + 0.0
             be[i] = lk.flux_err.value + 0.0
