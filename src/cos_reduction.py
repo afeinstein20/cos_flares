@@ -168,13 +168,8 @@ class cosReduce(object):
         else:
             return("You have all reference files needed!")
 
-<<<<<<< Updated upstream
-    def reduce_data(self, output_path):
-=======
-
     def reduce_data(self, output_path, component='a', split_files=None,
                     save_space=False):
->>>>>>> Stashed changes
         """
         Uses the calcos package to reduce new data.
 
@@ -216,16 +211,7 @@ class cosReduce(object):
                 os.mkdir(path_b)
             except OSError:
                 return("Couldn't find or create the output_path.")
-<<<<<<< Updated upstream
-                         
-        for letter in ['a', 'b']:
-=======
 
-        if type(component) == str:
-            component = [component]
-
-        for letter in component:
->>>>>>> Stashed changes
             if letter == 'a':
                 outdir = path_a
             else:
@@ -406,18 +392,6 @@ class cosReduce(object):
 
         for i in range(len(fn)):
             x1ddata = fits.getdata(fn[i])
-<<<<<<< Updated upstream
-            
-            wavelength = np.concatenate((x1ddata["wavelength"][1],
-                                         x1ddata["wavelength"][0])) + offset
-            flux = np.concatenate((x1ddata["flux"][1], 
-                                   x1ddata["flux"][0]))
-            err = np.concatenate((x1ddata["error"][1],
-                                  x1ddata["error"][0]))
-=======
-
-            print(fn[i])
-            print(x1ddata["wavelength"][1][0], x1ddata["wavelength"][0][0])
 
             try:
                 wavelength = np.concatenate((x1ddata["wavelength"][1],
@@ -430,7 +404,6 @@ class cosReduce(object):
                 wavelength = x1ddata["wavelength"][0] + offset
                 flux = x1ddata["flux"][0] + 0.0
                 err  = x1ddata["error"][0]+ 0.0
->>>>>>> Stashed changes
 
             if i == 0:
                 all_wave = np.zeros((len(fn), len(wavelength)))
