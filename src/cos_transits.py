@@ -77,6 +77,7 @@ class TransitsWithCOS(object):
            Where the velocity = 0.
         """
         rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
+        return rv_km_s, mid
 
     def load_line_table(self, path, fname='line_table.txt',
                         format='csv', comment='#'):
@@ -230,3 +231,61 @@ class TransitsWithCOS(object):
 
         self.orbits = orbits
         self.in_transit = transit
+
+    def combine_lines(self, cenwaves, velmin, velmax, nbins=20, visit=0):
+        """
+        Transforms wavelengths into velocity space and combines multiple lines.
+        Does separate analysis for data in vs. out-of transit.
+
+        Parameters
+        ----------
+        cenwaves : np.ndarray
+           Central wavelength values. Should be a central value per each line
+           you want to combine.
+        velmin : float
+           The minimum velocity value to sum over.
+        velmax : float
+           The maximum velocity value to sum over.
+        nbins : int, optional
+           The number of bins to create in velocity space. Default is 20.
+        visit : int, optional
+           Which visit data set to evaluate. Default is 0 (the first visit).
+           Other option includes 100, where 100 indicates to combine all visits.
+
+        Returns
+        -------
+        outputs : astropy.table.Table
+        """
+        tab = Table()
+        velbins = np.linspace(velmin, velmax, nbins)
+        tab['velocity'] = velbins
+
+        q_oot = (self.visit == visit) & (self.in_transit == 0)
+        q_it  = (self.visit == visit) & (self.in_transit == 1)
+
+        if visit == 100:
+            q_oot = (self.in_transit == 0)
+            q_it  = (self.in_transit == 1)
+
+        keys = ['it', 'oot']
+
+        for j in range(len(cenwaves)):
+
+            for i, q in enumerate([q_oot, q_it]):
+                mean = np.nanmean(self.flux[q], axis=0)
+                err  = np.sqrt(np.nansum(self.flux_err[q]**2.0, axis=0))/len(self.flux)
+
+                vel1, _ = self.to_velocity(self.wavelength[q][10],
+                                           mid=cenwaves[j])
+                f, e = np.zeros(nbins), np.zeros(nbins)
+
+                for v in range(len(velbins)-1):
+                    inds = ((vel1.value >= velbins[v]) &
+                            (vel1.value < velbins[v+1]))
+                    f[v] = np.nanmean(mean[inds])
+                    e[v] = np.nanmedian(err[inds])
+
+                tab['line{0:02d}_{1}_flux'.format(j, keys[i])] = f
+                tab['line{0:02d}_{1}_error'.format(j, keys[i])]= e
+
+        return tab

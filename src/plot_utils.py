@@ -103,3 +103,63 @@ def make_tworow():
         ax[j].set_rasterized(True)
 
     return fig, ax
+
+def plot_combined_lines(table, lines, factor=1e14):
+    """
+    Creates an n x 3 grid of subplots comparing the combined line profiles,
+    the difference between in- and out-of transit observations, and the ratio
+    between in- and out-of transit observations (following the figures of Linsky
+    et al. 2010).
+
+    Parameters
+    ----------
+    table : astropy.table.Table
+       Table outputs from `TransitsWithCos.combine_lines()`.
+    lines : np.ndarray, list
+       List of which lines were used in the analysis. This will be used as the
+       subplot titles as well.
+    """
+    fig, axes = plt.subplots(nrows=3, ncols=len(lines)+1, figsize=(18,10),
+                             sharex=True)
+    axes = axes.reshape(-1)
+    fig.set_facecolor('w')
+
+    color = ['k', 'r']
+    key = ['it', 'oot']
+
+    for i in range(len(lines)):
+        axes[i].set_title(lines[i])
+        for j in range(2):
+            axes[i].plot(table['velocity'],
+                         table['line{0:02d}_{1}_flux'.format(i, key[j])]*factor,
+                         color=color[j])
+        axes[i+len(lines)+1].plot(table['velocity'],
+                                (table['line{0:02d}_it_flux'.format(i)] -
+                                    table['line{0:02d}_oot_flux'.format(i)])*factor,
+                                color='k')
+        axes[i+len(lines)*2+2].plot(table['velocity'],
+                                  (table['line{0:02d}_it_flux'.format(i)] /
+                                     table['line{0:02d}_oot_flux'.format(i)]),
+                                  color='k')
+
+        if i == 0:
+            summed_it = table['line{0:02d}_it_flux'.format(i)]
+            summed_oot = table['line{0:02d}_oot_flux'.format(i)]
+        else:
+            summed_it += table['line{0:02d}_it_flux'.format(i)]
+            summed_oot += table['line{0:02d}_it_flux'.format(i)]
+
+    axes[len(lines)].plot(table['velocity'], summed_it*factor, c=color[0])
+    axes[len(lines)].plot(table['velocity'], summed_oot*factor, c=color[1])
+
+    axes[len(lines)*2+1].plot(table['velocity'], (summed_it - summed_oot)*factor, 'k')
+    axes[len(lines)*3+2].plot(table['velocity'], summed_it / summed_oot, 'k')
+
+    axes[len(lines)].set_title('Combined')
+
+    axes[0].set_ylabel('Flux Density\n[10$^{-14}$ erg s$^{-1}$ cm$^{-1} \AA^{-1}$]')
+    axes[len(lines)+1].set_ylabel('Difference\n(black-red)')
+    axes[(len(lines)+1)*2].set_ylabel('Ratio\n(black/red)')
+
+    axes[-2].set_xlabel(r'Velocity [km s$^{-1}$]')
+    return fig
