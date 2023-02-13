@@ -55,6 +55,7 @@ class TransitsWithCOS(object):
 
         self.flux_units =  units.erg / units.s / units.cm**2 / units.AA
 
+
     def to_velocity(self, wave, mid=None):
         """
         Converts wavelength to velocity space given some
@@ -78,6 +79,7 @@ class TransitsWithCOS(object):
         """
         rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
         return rv_km_s, mid
+
 
     def load_line_table(self, path, fname='line_table.txt',
                         format='csv', comment='#'):
@@ -232,6 +234,46 @@ class TransitsWithCOS(object):
         self.orbits = orbits
         self.in_transit = transit
 
+
+    def bin_in_velocity(self, cenwave, velbins, mask=None):
+        """
+        Bins flux in velocity space.
+
+        Parameters
+        ----------
+        cenwave : float
+           The central wavelength to set velocity = 0.
+        velbins : np.ndarray
+           Array of bin edges to evaluate over. Bins should be given in units
+           of velocity (km/s).
+        mask : np.array, optional
+           An optional mask to apply to the data before binning. Default is None.
+
+        Returns
+        -------
+        binned_data : np.ndarray
+           Array of binned data fluxes.
+        binned_error : np.ndarray
+           Array of binned data errors.
+        """
+        if mask is None:
+            mask = np.zeros(len(self.wavelength))
+
+        vel1, _ = self.to_velocity(self.wavelength[mask][10],
+                                   mid=cenwave)
+        f, e = np.zeros(len(velbins)), np.zeros(len(velbins))
+
+        mean = np.nanmean(self.flux[mask], axis=0)
+        err  = np.sqrt(np.nansum(self.flux_err[mask]**2.0, axis=0))/len(self.flux)
+
+        for v in range(len(velbins)-1):
+            inds = ((vel1.value >= velbins[v]) &
+                    (vel1.value < velbins[v+1]))
+            f[v] = np.nanmean(mean[inds])
+            e[v] = np.nanmedian(err[inds])
+
+        return f, e
+
     def combine_lines(self, cenwaves, velmin, velmax, nbins=20, visit=0):
         """
         Transforms wavelengths into velocity space and combines multiple lines.
@@ -272,18 +314,8 @@ class TransitsWithCOS(object):
         for j in range(len(cenwaves)):
 
             for i, q in enumerate([q_oot, q_it]):
-                mean = np.nanmean(self.flux[q], axis=0)
-                err  = np.sqrt(np.nansum(self.flux_err[q]**2.0, axis=0))/len(self.flux)
 
-                vel1, _ = self.to_velocity(self.wavelength[q][10],
-                                           mid=cenwaves[j])
-                f, e = np.zeros(nbins), np.zeros(nbins)
-
-                for v in range(len(velbins)-1):
-                    inds = ((vel1.value >= velbins[v]) &
-                            (vel1.value < velbins[v+1]))
-                    f[v] = np.nanmean(mean[inds])
-                    e[v] = np.nanmedian(err[inds])
+                f, e = self.bin_in_velocity(cenwaves[j], velbins, mask=q)
 
                 tab['line{0:02d}_{1}_flux'.format(j, keys[i])] = f
                 tab['line{0:02d}_{1}_error'.format(j, keys[i])]= e

@@ -161,5 +161,10 @@ def plot_combined_lines(table, lines, factor=1e14):
     axes[len(lines)+1].set_ylabel('Difference\n(black-red)')
     axes[(len(lines)+1)*2].set_ylabel('Ratio\n(black/red)')
 
+    for i in np.arange(0,len(lines)+1,1)+len(lines)+1:
+        axes[i].axhline(0, color='darkorange')
+        axes[i+3].axhline(1, color='darkorange')
+        axes[i+3].set_ylim(-1,3)
+
     axes[-2].set_xlabel(r'Velocity [km s$^{-1}$]')
     return fig
