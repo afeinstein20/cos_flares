@@ -31,10 +31,11 @@ def to_velocity(wave, mid):
         mid = int(len(wave)/2)
     else:
         mid = np.where(wave>=mid)[0][0]
+
     lambda0 = wave[mid] + 0.0
     rv_m_s = ((wave - lambda0)/lambda0 * 3e8)*units.m/units.s
     rv_km_s = rv_m_s.to(units.km/units.s)
-
+    
     return rv_km_s, mid
 
 
