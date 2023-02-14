@@ -302,22 +302,27 @@ class TransitsWithCOS(object):
         velbins = np.linspace(velmin, velmax, nbins)
         tab['velocity'] = velbins
 
-        q_oot = (self.visit == visit) & (self.in_transit == 0)
-        q_it  = (self.visit == visit) & (self.in_transit == 1)
-
-        if visit == 100:
-            q_oot = (self.in_transit == 0)
-            q_it  = (self.in_transit == 1)
+        if type(visit) == list or type(visit) == np.ndarray:
+            pass
+        else:
+            visit = [visit]
 
         keys = ['it', 'oot']
 
-        for j in range(len(cenwaves)):
+        for v in range(len(visit)):
 
-            for i, q in enumerate([q_oot, q_it]):
+            q_oot = (self.visit == visit[v]) & (self.in_transit == 0)
+            q_it  = (self.visit == visit[v]) & (self.in_transit == 1)
 
-                f, e = self.bin_in_velocity(cenwaves[j], velbins, mask=q)
+            for j in range(len(cenwaves)):
 
-                tab['line{0:02d}_{1}_flux'.format(j, keys[i])] = f
-                tab['line{0:02d}_{1}_error'.format(j, keys[i])]= e
+                for i, q in enumerate([q_oot, q_it]):
+
+                    f, e = self.bin_in_velocity(cenwaves[j], velbins, mask=q)
+
+                    tab['line{0:02d}_{1}_flux_visit{2}'.format(j, keys[i],
+                                                               visit[v])] = f
+                    tab['line{0:02d}_{1}_error_visit{2}'.format(j, keys[i],
+                                                                visit[v])]= e
 
         return tab

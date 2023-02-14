@@ -104,7 +104,26 @@ def make_tworow():
 
     return fig, ax
 
-def plot_combined_lines(table, lines, factor=1e14):
+def plot_binned_resid(x, yin, yoot, velbins, ebar_dict, ax1, ax2, factor):
+    """
+    Plots the binned residuals.
+    """
+    for i in range(len(velbins)-1):
+        inds = ( (x >= velbins[i]) & (x < velbins[i+1]))
+
+        ax1.errorbar((velbins[i]+velbins[i+1])/2.0,
+                    np.nanmean(yin[inds] - yoot[inds])*factor,
+                    yerr=np.nanstd(yin[inds] - yoot[inds])*factor,
+                    **ebar_dict)
+
+        ax2.errorbar((velbins[i]+velbins[i+1])/2.0,
+                    np.nanmean(yin[inds] / yoot[inds]),
+                    yerr=np.nanstd(yin[inds] / yoot[inds]),
+                    **ebar_dict)
+    return
+
+def plot_combined_lines(table, lines, visit=1, factor=1e14, binned_resid=False,
+                        nbins=20):
     """
     Creates an n x 3 grid of subplots comparing the combined line profiles,
     the difference between in- and out-of transit observations, and the ratio
@@ -119,6 +138,11 @@ def plot_combined_lines(table, lines, factor=1e14):
        List of which lines were used in the analysis. This will be used as the
        subplot titles as well.
     """
+    if type(visit) == list or type(visit) == np.ndarray:
+        pass
+    else:
+        visit = [visit]
+
     fig, axes = plt.subplots(nrows=3, ncols=len(lines)+1, figsize=(18,10),
                              sharex=True)
     axes = axes.reshape(-1)
@@ -127,33 +151,81 @@ def plot_combined_lines(table, lines, factor=1e14):
     color = ['k', 'r']
     key = ['it', 'oot']
 
-    for i in range(len(lines)):
-        axes[i].set_title(lines[i])
-        for j in range(2):
-            axes[i].plot(table['velocity'],
-                         table['line{0:02d}_{1}_flux'.format(i, key[j])]*factor,
-                         color=color[j])
-        axes[i+len(lines)+1].plot(table['velocity'],
-                                (table['line{0:02d}_it_flux'.format(i)] -
-                                    table['line{0:02d}_oot_flux'.format(i)])*factor,
-                                color='k')
-        axes[i+len(lines)*2+2].plot(table['velocity'],
-                                  (table['line{0:02d}_it_flux'.format(i)] /
-                                     table['line{0:02d}_oot_flux'.format(i)]),
-                                  color='k')
+    velbins = np.linspace(table['velocity'].min(), table['velocity'].max(),
+                          nbins)
 
-        if i == 0:
-            summed_it = table['line{0:02d}_it_flux'.format(i)]
-            summed_oot = table['line{0:02d}_oot_flux'.format(i)]
-        else:
-            summed_it += table['line{0:02d}_it_flux'.format(i)]
-            summed_oot += table['line{0:02d}_it_flux'.format(i)]
+    ebar_dict = {'marker':'o', 'markerfacecolor':'w', 'zorder':10, 'color':'k',
+                 'ms':8, 'lw':1.5, 'markeredgewidth':1.5}
+    x = (table['velocity'][1:] + table['velocity'][:-1])/2.0
 
-    axes[len(lines)].plot(table['velocity'], summed_it*factor, c=color[0])
-    axes[len(lines)].plot(table['velocity'], summed_oot*factor, c=color[1])
+    linestyles = ['-', '--', ':']
 
-    axes[len(lines)*2+1].plot(table['velocity'], (summed_it - summed_oot)*factor, 'k')
-    axes[len(lines)*3+2].plot(table['velocity'], summed_it / summed_oot, 'k')
+    # dealing with table related things
+    table = table[:-1]
+    fcolname = 'line{0:02d}_{1}_flux_visit{2}'
+    ecolname = 'line{0:02d}_{1}_error_visit{2}'
+    it_colname = 'line{0:02d}_it_flux_visit{1}'
+    oot_colname = 'line{0:02d}_oot_flux_visit{1}'
+
+    for k in range(len(visit)):
+
+        for i in range(len(lines)):
+            axes[i].set_title(lines[i])
+
+            for j in range(2):
+
+                y = table[fcolname.format(i, key[j], visit[k])]*factor
+                yerr = table[ecolname.format(i, key[j], visit[k])]*factor
+
+                axes[i].plot(x, y,color=color[j], linestyle=linestyles[k])
+
+                axes[i].fill_between(x, y-yerr, y+yerr,
+                                     color=color[j], alpha=0.4, lw=0)
+
+            if binned_resid:
+                plot_binned_resid(x,
+                                  table[it_colname.format(i, visit[k])],
+                                  table[oot_colname.format(i, visit[k])],
+                                  velbins, ebar_dict, axes[i+len(lines)+1],
+                                  axes[i+len(lines)*2+2], factor)
+                alpha = 0.4
+            else:
+                alpha = 1.0
+
+
+            axes[i+len(lines)+1].plot(x,
+                                      (table[it_colname.format(i, visit[k])] -
+                                        table[oot_colname.format(i, visit[k])])*factor,
+                                    color='k', alpha=alpha)
+
+
+            axes[i+len(lines)*2+2].plot(x,
+                                       (table[it_colname.format(i, visit[k])] /
+                                         table[oot_colname.format(i, visit[k])]),
+                                      color='k', alpha=alpha)
+            if i == 0:
+                summed_it = table[it_colname.format(i, visit[k])]
+                summed_oot = table[oot_colname.format(i, visit[k])]
+            else:
+                summed_it += table[it_colname.format(i, visit[k])]
+                summed_oot += table[oot_colname.format(i, visit[k])]
+
+    axes[len(lines)].plot(x, summed_it*factor, c=color[0])
+    axes[len(lines)].plot(x, summed_oot*factor, c=color[1])
+
+    axes[len(lines)*2+1].plot(x,
+                              (summed_it - summed_oot)*factor,
+                              'k', alpha=alpha)
+    axes[len(lines)*3+2].plot(x, summed_it / summed_oot, 'k',
+                              alpha=alpha)
+
+    if binned_resid:
+        plot_binned_resid(x,
+                          summed_it,
+                          summed_oot,
+                          velbins, ebar_dict, axes[len(lines)*2+1],
+                          axes[len(lines)*3+2], factor)
+
 
     axes[len(lines)].set_title('Combined')
 
