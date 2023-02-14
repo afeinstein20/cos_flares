@@ -154,7 +154,7 @@ class TransitsWithCOS(object):
            lines are re-measured.
 
         """
-        wt, et = spectral_utils.measure_ew(self.orbit, self.time, self.wavelength,
+        wt, et = spectral_utils.measure_ew(self.visit, self.time, self.wavelength,
                                            self.flux, self.flux_err,
                                            self.line_table, ion=ion,
                                            line=line, vmin=vmin, vmax=vmax,
