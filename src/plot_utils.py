@@ -158,14 +158,14 @@ def plot_combined_lines(table, lines, visit=1, factor=1e14, binned_resid=False,
                  'ms':8, 'lw':1.5, 'markeredgewidth':1.5}
     x = (table['velocity'][1:] + table['velocity'][:-1])/2.0
 
-    linestyles = ['-', '--', ':']
-
     # dealing with table related things
     table = table[:-1]
     fcolname = 'line{0:02d}_{1}_flux_visit{2}'
     ecolname = 'line{0:02d}_{1}_error_visit{2}'
     it_colname = 'line{0:02d}_it_flux_visit{1}'
     oot_colname = 'line{0:02d}_oot_flux_visit{1}'
+
+    offset = 0
 
     for k in range(len(visit)):
 
@@ -177,9 +177,9 @@ def plot_combined_lines(table, lines, visit=1, factor=1e14, binned_resid=False,
                 y = table[fcolname.format(i, key[j], visit[k])]*factor
                 yerr = table[ecolname.format(i, key[j], visit[k])]*factor
 
-                axes[i].plot(x, y,color=color[j], linestyle=linestyles[k])
+                axes[i].plot(x, y+offset,color=color[j])
 
-                axes[i].fill_between(x, y-yerr, y+yerr,
+                axes[i].fill_between(x, y-yerr+offset, y+yerr+offset,
                                      color=color[j], alpha=0.4, lw=0)
 
             if binned_resid:
@@ -209,6 +209,8 @@ def plot_combined_lines(table, lines, visit=1, factor=1e14, binned_resid=False,
             else:
                 summed_it += table[it_colname.format(i, visit[k])]
                 summed_oot += table[oot_colname.format(i, visit[k])]
+
+        offset += 0.4
 
     axes[len(lines)].plot(x, summed_it*factor, c=color[0])
     axes[len(lines)].plot(x, summed_oot*factor, c=color[1])
