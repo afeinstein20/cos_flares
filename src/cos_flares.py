@@ -54,6 +54,7 @@ class FlaresWithCOS(object):
         self.time = time * time_unit
         self.orbit = orbit
         self.line_table = None
+        self.lsf_table = None
         self.width_table = Table()
         self.error_table = Table()
         self.fuv130 = None
@@ -116,6 +117,7 @@ class FlaresWithCOS(object):
            Where the velocity = 0.
         """
         rv_km_s, mid = spectral_utils.to_velocity(wave, mid)
+        return rv_km_s, mid
 
 
     def measure_ew(self, ion=None, line=None, vmin=None,
@@ -445,7 +447,7 @@ class FlaresWithCOS(object):
                           pars, x=time)
 
         return time, flux, flux_err, fmodel, init, out
-        
+
 
     def load_lsf_model(self, fname):
         """
@@ -478,7 +480,7 @@ class FlaresWithCOS(object):
 
     def model_line_shape(self, ion, mask, shape='gaussian',
                          ext=100, ngauss=1, f=None,
-                         ferr=None, lsf=None):
+                         ferr=None, lsf=None, scaling=1e14):
         """
         Takes an ion from the line list and fits a convolved Gaussian
         with the line spread function. Line profiles are fit by conducting
@@ -517,7 +519,10 @@ class FlaresWithCOS(object):
             exp = -0.5 * (x-mu)**2 / std**2
             denom = std * np.sqrt(np.pi * 2.0)
             g = f / denom * np.exp(exp)
-            return np.convolve(lsf, g, 'same')# + off
+            if lsf is not None:
+                return np.convolve(lsf, g, 'same')# + off
+            else:
+                return g
 
         wc   = self.line_table[self.line_table['ion']==ion]['wave_c'][0]
         vmin = self.line_table[self.line_table['ion']==ion]['vmin'][0]
@@ -531,7 +536,7 @@ class FlaresWithCOS(object):
         wave = self.wavelength[mask][:,reg]
 
         # finds the line spread profile closest to the ion in question #
-        if lsf is None:
+        if lsf is not None:
 
             argmin = np.argmin(np.abs([float(i) for i in self.lsf_table.colnames] - wc))
             lsf = self.lsf_table[self.lsf_table.colnames[argmin]].data
@@ -544,13 +549,15 @@ class FlaresWithCOS(object):
             lsf_interp = interp1d(ivel, lsf)
             lsf = lsf_interp(velocity[reg]) + 0.0
 
+        # uses the mean flux across the mask as the data to fit to
         if f is None:
-            f = np.nanmedian(self.flux[mask,:], axis=0)
-        f = f[reg] + 0.0
+            f = np.nanmean(self.flux[mask,:], axis=0)
+        f = f[reg] * scaling
 
+        # gets the error on the flux
         if ferr is None:
             ferr = np.sqrt(np.nansum(self.flux_err[mask,:]**2,axis=0))/len(self.flux[mask,:])
-        ferr = ferr[reg] + 0.0
+        ferr = ferr[reg] * scaling
 
         vel = velocity[reg] + 0.0
 
@@ -562,7 +569,8 @@ class FlaresWithCOS(object):
         pars = gmodel.make_params()
 
         if ngauss>=6:
-            mus = np.array([0, -30, 30, -100,100, -150, 150, -200, 200],dtype=np.float32)
+            mus = np.array([0, -30, 30, -100,100, -150,
+                            150, -200, 200],dtype=np.float32)
         else:
             fp,_ = find_peaks(f, width=15)
             best = np.argsort(f[fp])[-ngauss:]
@@ -576,11 +584,13 @@ class FlaresWithCOS(object):
                 mus=np.zeros(ngauss)
 
         for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+5, max=vel.max()-5)
+            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+5,
+                                               max=vel.max()-5)
             pars['g{}_{}'.format(i, 'std')].set(value=10, min=0.1, max=200)
             pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.01, max=400)
 
         init = gmodel.eval(pars, x=vel)
+
         out = gmodel.fit(f,
                          pars,
                          x=vel,
