@@ -479,7 +479,7 @@ class FlaresWithCOS(object):
 
 
     def model_line_shape(self, ion, mask, shape='gaussian',
-                         ext=100, ngauss=1, f=None,
+                         ext=100, ngauss=1, f=None, mus=None,
                          ferr=None, lsf=None, scaling=1e14):
         """
         Takes an ion from the line list and fits a convolved Gaussian
@@ -568,24 +568,26 @@ class FlaresWithCOS(object):
                 gmodel += Model(gaussian, prefix='g{}_'.format(i))
         pars = gmodel.make_params()
 
-        if ngauss>=6:
-            mus = np.array([0, -30, 30, -100,100, -150,
-                            150, -200, 200],dtype=np.float32)
-        else:
-            fp,_ = find_peaks(f, width=15)
-            best = np.argsort(f[fp])[-ngauss:]
-            mus = vel[fp][best] + 0.0
+        if mus is None:
 
-            if len(best) < ngauss:
-                fp,_ = find_peaks(f, width=5)
+            if ngauss>=6:
+                mus = np.array([0, 30, -30, 100,-100, -150,
+                                150, -200, 200],dtype=np.float32)
+            else:
+                fp,_ = find_peaks(f, width=15)
                 best = np.argsort(f[fp])[-ngauss:]
                 mus = vel[fp][best] + 0.0
-            if len(best) < ngauss:
-                mus=np.zeros(ngauss)
+
+                if len(best) < ngauss:
+                    fp,_ = find_peaks(f, width=5)
+                    best = np.argsort(f[fp])[-ngauss:]
+                    mus = vel[fp][best] + 0.0
+                if len(best) < ngauss:
+                    mus=np.zeros(ngauss)
 
         for i in range(ngauss):
-            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+5,
-                                               max=vel.max()-5)
+            pars['g{}_{}'.format(i, 'mu')].set(value=mus[i], min=vel.min()+40,
+                                               max=vel.max()-40)
             pars['g{}_{}'.format(i, 'std')].set(value=10, min=0.1, max=200)
             pars['g{}_{}'.format(i, 'f')].set(value=20, min=0.01, max=400)
 
