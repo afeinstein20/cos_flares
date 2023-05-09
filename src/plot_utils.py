@@ -149,7 +149,7 @@ def plot_combined_lines(table, lines, visit=1, factor=1e14, binned_resid=False,
     #else:
     ncols=len(lines)+1
 
-    fig, axes = plt.subplots(nrows=3, ncols=ncols, figsize=(18,10),
+    fig, axes = plt.subplots(nrows=3, ncols=ncols, figsize=(24,10),
                              sharex=True)
 
     axes = axes.reshape(-1)
