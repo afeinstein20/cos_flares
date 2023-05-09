@@ -35,11 +35,11 @@ def to_velocity(wave, mid):
     lambda0 = wave[mid] + 0.0
     rv_m_s = ((wave - lambda0)/lambda0 * 3e8)*units.m/units.s
     rv_km_s = rv_m_s.to(units.km/units.s)
-    
+
     return rv_km_s, mid
 
 
-def measure_ew(orbit, time, wavelength, flux, flux_err, line_table,
+def measure_ew(time, wavelength, flux, flux_err, line_table,
                ion=None, line=None, vmin=None, vmax=None,
                orbit_num='all', binsize=3, width_table=None, error_table=None):
     """
@@ -85,11 +85,6 @@ def measure_ew(orbit, time, wavelength, flux, flux_err, line_table,
         width_table = Table()
         error_table = Table()
 
-    if orbit_num != 'all':
-        mask = np.where(orbit == orbit_num)[0]
-    else:
-        mask = np.arange(0,len(orbit),1,dtype=int)
-
     if ion is not None and line_table is not None:
         line = line_table[line_table['ion']==ion]['wave_c']+0.0
         vmin = line_table[line_table['ion']==ion]['vmin']+0.0
@@ -98,15 +93,15 @@ def measure_ew(orbit, time, wavelength, flux, flux_err, line_table,
         return('No table found. Please load the line table first with \
                 load_line_table().')
 
-    widths = np.zeros(len(time[mask]))
-    errors = np.zeros(len(time[mask]))
+    widths = np.zeros(len(time))
+    errors = np.zeros(len(time))
 
-    for i,x in enumerate(mask):
-        v, _ = to_velocity(wavelength[x], mid=line)
+    for i in range(len(time)):
+        v, _ = to_velocity(wavelength[i], mid=line)
         reg = np.where( (v.value >= vmin) & (v.value <= vmax) )[0]
 
-        widths[i] = np.nansum(flux[x][reg])
-        errors[i] = np.sqrt(np.nansum(flux_err[x][reg]**2))
+        widths[i] = np.nansum(flux[i][reg])
+        errors[i] = np.sqrt(np.nansum(flux_err[i][reg]**2))
 
     try:
         if ion is not None:
