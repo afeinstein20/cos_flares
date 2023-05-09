@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from astropy.table import Table, Column
 
+import transit_utils
 import spectral_utils
 
 __all__ = ['TransitsWithCOS']
@@ -154,7 +155,7 @@ class TransitsWithCOS(object):
            lines are re-measured.
 
         """
-        wt, et = spectral_utils.measure_ew(self.visit, self.time, self.wavelength,
+        wt, et = spectral_utils.measure_ew(self.time, self.wavelength,
                                            self.flux, self.flux_err,
                                            self.line_table, ion=ion,
                                            line=line, vmin=vmin, vmax=vmax,
@@ -274,7 +275,8 @@ class TransitsWithCOS(object):
 
         return f, e
 
-    def combine_lines(self, cenwaves, velmin, velmax, nbins=20, visit=0):
+    def combine_lines(self, cenwaves, velmin, velmax, nbins=20, visit=0,
+                      flaremask=None):
         """
         Transforms wavelengths into velocity space and combines multiple lines.
         Does separate analysis for data in vs. out-of transit.
@@ -311,8 +313,14 @@ class TransitsWithCOS(object):
 
         for v in range(len(visit)):
 
-            q_oot = (self.visit == visit[v]) & (self.in_transit == 0)
-            q_it  = (self.visit == visit[v]) & (self.in_transit == 1)
+            if flaremask is None:
+                q_oot = (self.visit == visit[v]) & (self.in_transit == 0)
+                q_it  = (self.visit == visit[v]) & (self.in_transit == 1)
+            else:
+                q_oot = ((self.visit == visit[v]) & (self.in_transit == 0) &
+                         (flaremask == 0))
+                q_it  = ((self.visit == visit[v]) & (self.in_transit == 1) &
+                         (flaremask == 0))
 
             for j in range(len(cenwaves)):
 
@@ -326,3 +334,28 @@ class TransitsWithCOS(object):
                                                                 visit[v])]= e
 
         return tab
+
+    def model_transit(self, params, type='brightening'):
+        """
+        Used to model both limb darkening and limb brightening transit light
+        curves. The light curves are fit to the data.
+
+        Parameters
+        ----------
+        params : dict
+           Dictionary of orbital parameters. Should include the following keys:
+           't0' (time of mid-transit), 'per' (period, units of days), 'rp'
+           (radius of planet, units of Rstar), 'arstar' (semi-major axis, units
+           of Rstar), 'inc' (inclination), 'ecc' (eccentricity), 'u' (limb
+           darkening coefficients, should be a list)
+        type : str
+           Which model to compute. Default is 'brightening'. Other options are:
+           'darkening'. Limb darkening model is computed using `batman`.
+        """
+        if type == 'brightening':
+            blc = transit_utils.limb_brightening(b, params['rp'])
+        elif type == 'darkening':
+            dlc = transit_utils.limb_darkening(t, params)
+        else:
+            return('Transit model not implemented. Please enter either \
+                   "brightening" or "darkening".')
