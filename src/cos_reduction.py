@@ -89,14 +89,12 @@ class cosReduce(object):
         splittag_path : str
            The path to where the splittag data is saved.
         """
-        print(self.rootname, self.input_path)
         for i in range(len(self.rootname)):
             corrtag_a = os.path.join(self.input_path,
                                      '{}_corrtag_a.fits'.format(self.rootname[i]))
             corrtag_b = os.path.join(self.input_path,
                                      '{}_corrtag_b.fits'.format(self.rootname[i]))
-
-
+            print(corrtag_a)
             splittag.splittag(corrtag_a, os.path.join(output_path,
                                                       'split_{}'.format(self.rootname[i])),
                               increment=increment, starttime=starttime,
@@ -158,6 +156,7 @@ class cosReduce(object):
             path = self.input_path
 
         downloaded = os.listdir(path)
+        #print(downloaded)
 
         for fn in all_files:
             if fn.split('$')[-1] not in downloaded and fn!='N/A':
@@ -212,37 +211,37 @@ class cosReduce(object):
             except OSError:
                 return("Couldn't find or create the output_path.")
 
-            if letter == 'a':
-                outdir = path_a
-            else:
-                outdir = path_b
+        if component == 'a':
+            outdir = path_a
+        else:
+            outdir = path_b
 
-            if split_files is None:
-                split_files = np.unique(np.sort([os.path.join(self.splittag_path, i)
-                                                 for i in os.listdir(self.splittag_path)
-                                                 if i.endswith('{}.fits'.format(letter))]))
-            for f in tqdm(range(len(split_files))):
-                lead = '_'.join(e for e in
-                                split_files[f].split('/')[-1].split('_')[:3])
-                if os.path.exists(os.path.join(outdir, lead+'_x1d.fits')) == True:
-                    pass
-                else:
+        if split_files is None:
+            split_files = np.unique(np.sort([os.path.join(self.splittag_path, i)
+                                             for i in os.listdir(self.splittag_path)
+                                             if i.endswith('{}.fits'.format(letter))]))
+        for f in tqdm(range(len(split_files))):
+            lead = '_'.join(e for e in
+                            split_files[f].split('/')[-1].split('_')[:3])
+            if os.path.exists(os.path.join(outdir, lead+'_x1d.fits')) == True:
+                pass
+            else:
+                #try:
+                calcos.calcos(split_files[f], verbosity=0,
+                              outdir=outdir)
+                if save_space == True:
+                    lead = '_'.join(e for e in
+                                    split_files[f].split('/')[-1].split('_')[:3])
+                for ext in saved_exts:
                     try:
-                        calcos.calcos(split_files[f], verbosity=0,
-                                      outdir=outdir)
-                        if save_space == True:
-                            lead = '_'.join(e for e in
-                                            split_files[f].split('/')[-1].split('_')[:3])
-                            for ext in saved_exts:
-                                try:
-                                    os.remove(os.path.join(outdir, lead+ext))
-                                except FileNotFoundError:
-                                    pass
-                    except RuntimeError:
+                        os.remove(os.path.join(outdir, lead+ext))
+                    except FileNotFoundError:
                         pass
-        self.path_a = path_a
-        self.path_b = path_b
-        self.reduced_path = output_path
+                #except RuntimeError:
+                #    pass
+    #self.path_a = path_a
+    #self.path_b = path_b
+    #self.reduced_path = output_path
 
 
     def bookkeeping(self):
