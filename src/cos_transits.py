@@ -347,15 +347,22 @@ class TransitsWithCOS(object):
            't0' (time of mid-transit), 'per' (period, units of days), 'rp'
            (radius of planet, units of Rstar), 'arstar' (semi-major axis, units
            of Rstar), 'inc' (inclination), 'ecc' (eccentricity), 'u' (limb
-           darkening coefficients, should be a list)
+           darkening coefficients, should be a list), 'b' (impact parameter)
         type : str
            Which model to compute. Default is 'brightening'. Other options are:
            'darkening'. Limb darkening model is computed using `batman`.
         """
         if type == 'brightening':
-            blc = transit_utils.limb_brightening(b, params['rp'])
+            #n = len(self.time)
+            #phArr = np.arange(0,n,1)/float(n-1) * 0.05 - 0.025
+            #xD = params['arstar'] * np.sin(phArr * 2.0 * np.pi)
+            #bp = params['b'] * np.cos(phArr * 2.0 * np.pi)
+            #zarr = sqrt(xD**2 + bp**2)
+            blc = transit_utils.limb_brightening(self.phase, params['rp'])
+            return zarr, blc
         elif type == 'darkening':
-            dlc = transit_utils.limb_darkening(t, params)
+            dlc = transit_utils.limb_darkening(self.time, params)
+            return dlc
         else:
             return('Transit model not implemented. Please enter either \
                    "brightening" or "darkening".')
